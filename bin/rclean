@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# rclean -- Tear down a workstream: worktree + Herdr tab (herdr stack)
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rclean <name>
+
+Clean up a workstream: unpromote if needed, remove worktree and close the Herdr tab.
+
+Arguments:
+  name    Stream name (ticket ID)
+
+Options:
+  --session <name>    tmux session (default: current session)
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+SESSION_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --session) SESSION_FLAG="$2"; shift 2 ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+rdev_resolve_session
+WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+STATE=$(rdev_read_state "$NAME")
+MODE=$(echo "$STATE" | jq -r '.mode // "worktree"')
+BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "stream/$NAME")
+
+# Unpromote if currently promoted (only for worktree mode — local mode doesn't promote)
+PROMOTED=$(echo "$STATE" | jq -r '.promoted // "false"')
+if [[ "$PROMOTED" == "true" && "$MODE" != "local" ]]; then
+  # Check if main repo is actually on a promoted branch before trying to unpromote
+  CURRENT_MAIN=$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  if [[ "$CURRENT_MAIN" == promoted/* ]]; then
+    # Stash if needed
+    if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
+      git -C "$RHYTHMS_DIR" stash push -m "rdev: auto-stash before rclean $NAME"
+    fi
+    echo "Unpromoting branch first..."
+    "$SCRIPT_DIR/runpromote" "$NAME"
+  fi
+fi
+
+# Check for unpushed commits
+UNPUSHED=$(git -C "$WORK_DIR" log --oneline "@{upstream}..HEAD" 2>/dev/null || \
+           git -C "$WORK_DIR" log --oneline "origin/main..HEAD" 2>/dev/null || echo "")
+if [[ -n "$UNPUSHED" ]]; then
+  echo "Warning: unpushed commits in '$NAME':"
+  echo "$UNPUSHED"
+  echo ""
+  read -rp "Continue anyway? [y/N] " confirm
+  if [[ "$confirm" != [yY] ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+fi
+
+# Close the Herdr tab for this stream (herdr stack).
+WS_ID="$(rdev-mux space-find --name "$RDEV_WORKSPACE")"
+if [[ -n "$WS_ID" ]]; then
+  TAB_ID="$(rdev-mux tab-find --name "$NAME" --workspace "$WS_ID")"
+  if [[ -n "$TAB_ID" ]]; then
+    echo "Closing Herdr tab '$NAME' ($TAB_ID)..."
+    rdev-mux kill --tab "$TAB_ID" >/dev/null 2>&1 || true
+  else
+    echo "No Herdr tab labeled '$NAME' in workspace '$RDEV_WORKSPACE' (already closed?)."
+  fi
+fi
+
+if [[ "$MODE" == "local" ]]; then
+  # Local mode: just remove .rdev state and rdev agents
+  echo "Cleaning up local stream state..."
+  rm -rf "$RHYTHMS_DIR/.claude/rdev"
+  # Remove rdev agents (but leave project agents)
+  rm -f "$RHYTHMS_DIR/.claude/agents/coordinator.md" \
+        "$RHYTHMS_DIR/.claude/agents/builder.md" \
+        "$RHYTHMS_DIR/.claude/agents/reviewer.md"
+  echo "Stream '$NAME' cleaned up (local mode)."
+  echo "Branch '$BRANCH' is still checked out — switch manually if needed."
+else
+  # Worktree mode: remove worktree
+  WORKTREE_PATH="$WORKTREE_DIR/$NAME"
+  if [[ -d "$WORKTREE_PATH" ]]; then
+    echo "Removing worktree at $WORKTREE_PATH..."
+    git -C "$RHYTHMS_DIR" worktree remove "$WORKTREE_PATH" --force 2>/dev/null || {
+      echo "git worktree remove failed, force-removing directory..."
+      rm -rf "$WORKTREE_PATH"
+    }
+    git -C "$RHYTHMS_DIR" worktree prune 2>/dev/null
+  else
+    # Directory gone but git might still track it — prune stale entries
+    git -C "$RHYTHMS_DIR" worktree prune 2>/dev/null
+    echo "Worktree '$NAME' not found at $WORKTREE_PATH (pruned stale references)"
+  fi
+
+  # Prompt to delete branch
+  if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+    read -rp "Delete branch '$BRANCH'? [y/N] " del_branch
+    if [[ "$del_branch" == [yY] ]]; then
+      git -C "$RHYTHMS_DIR" branch -D "$BRANCH"
+      echo "Branch '$BRANCH' deleted."
+    fi
+  fi
+
+  echo "Stream '$NAME' cleaned up."
+fi

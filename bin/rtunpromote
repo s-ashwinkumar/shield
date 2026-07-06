@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# runpromote -- Move back from local mode to a worktree, restore main to main branch
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib_tmux.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: runpromote <name>
+
+Move the current branch back into a worktree and restore main repo to main.
+Reverses what rpromote did.
+
+Arguments:
+  name    Stream name (ticket ID)
+
+Options:
+  -h, --help    Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+BRANCH=$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+if [[ "$BRANCH" == "main" ]]; then
+  echo "Already on main — nothing to unpromote."
+  exit 0
+fi
+
+echo "Unpromoting '$NAME' (branch: $BRANCH)"
+echo ""
+
+# --- Step 1: Check for uncommitted changes ---
+
+if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
+  echo "Uncommitted changes in main repo:"
+  git -C "$RHYTHMS_DIR" status --short
+  echo ""
+  read -rp "Commit them before moving to worktree? [Y/n] " confirm
+  if [[ "$confirm" == [nN] ]]; then
+    echo "Aborted. Commit or stash your changes first."
+    exit 1
+  fi
+  git -C "$RHYTHMS_DIR" add -A
+  git -C "$RHYTHMS_DIR" commit -m "wip: uncommitted changes before unpromote"
+  echo "Changes committed."
+fi
+
+# --- Step 2: Create worktree ---
+
+WORKTREE_PATH="$WORKTREE_DIR/$NAME"
+if [[ -d "$WORKTREE_PATH" ]]; then
+  echo "Worktree already exists at $WORKTREE_PATH — reusing."
+else
+  echo "Creating worktree..."
+  mkdir -p "$WORKTREE_DIR"
+
+  # Switch main to main first so the branch is free
+  git -C "$RHYTHMS_DIR" checkout main
+
+  git -C "$RHYTHMS_DIR" worktree add "$WORKTREE_PATH" "$BRANCH"
+
+  # Symlink docs/plans to main repo
+  mkdir -p "$RHYTHMS_DIR/docs/plans"
+  if [[ ! -L "$WORKTREE_PATH/docs/plans" ]]; then
+    rm -rf "$WORKTREE_PATH/docs/plans"
+    mkdir -p "$WORKTREE_PATH/docs"
+    ln -sf "$RHYTHMS_DIR/docs/plans" "$WORKTREE_PATH/docs/plans"
+  fi
+
+  # Copy rdev agents and skills
+  RDEV_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  mkdir -p "$WORKTREE_PATH/.claude/agents" "$WORKTREE_PATH/.claude/skills"
+  cp "$RDEV_ROOT"/agents/*.md "$WORKTREE_PATH/.claude/agents/" 2>/dev/null || true
+  cp -r "$RDEV_ROOT"/skills/* "$WORKTREE_PATH/.claude/skills/" 2>/dev/null || true
+fi
+
+# --- Step 3: Move state to worktree ---
+
+if [[ -f "$RHYTHMS_DIR/.claude/rdev/state.json" ]]; then
+  mkdir -p "$WORKTREE_PATH/.claude/rdev"
+  cp "$RHYTHMS_DIR/.claude/rdev/state.json" "$WORKTREE_PATH/.claude/rdev/state.json"
+  # Update mode back to worktree
+  tmp=$(jq '.mode = "worktree"' "$WORKTREE_PATH/.claude/rdev/state.json")
+  echo "$tmp" > "$WORKTREE_PATH/.claude/rdev/state.json"
+  # Clean local state
+  rm -f "$RHYTHMS_DIR/.claude/rdev/state.json"
+fi
+
+# --- Step 4: Switch main repo back to main ---
+
+if [[ "$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD)" != "main" ]]; then
+  echo "Switching main repo back to main..."
+  git -C "$RHYTHMS_DIR" checkout main
+fi
+
+# Restore stashed changes if any
+WAS_STASHED=$(git -C "$RHYTHMS_DIR" stash list 2>/dev/null | grep "rdev: auto-stash" | head -1)
+if [[ -n "$WAS_STASHED" ]]; then
+  echo "Restoring stashed changes..."
+  git -C "$RHYTHMS_DIR" stash pop 2>/dev/null || echo "Warning: stash pop failed"
+fi
+
+echo ""
+echo "Done. Worktree created at $WORKTREE_PATH"
+echo "Main repo restored to main."
+echo ""
+echo "Use rstream $NAME to open a Claude session in the worktree."

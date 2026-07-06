@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# rtdev -- (tmux stack) Start or attach to the rdev tmux session + services.
+# Frozen tmux version; the herdr port lives under `rdev`.
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib_tmux.sh"
+rdev_load_config
+
+# If session exists, attach/switch to it
+if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+  echo "Session '$TMUX_SESSION' already exists. Attaching..."
+  if [[ -n "${TMUX:-}" ]]; then
+    tmux switch-client -t "$TMUX_SESSION"
+  else
+    tmux attach-session -t "$TMUX_SESSION"
+  fi
+  exit 0
+fi
+
+# Create new session with services window
+echo "Starting rdev session..."
+tmux new-session -d -s "$TMUX_SESSION" -n services -c "$RHYTHMS_DIR"
+
+# Start devcontainer services if devcontainer CLI is available
+if command -v devcontainer &>/dev/null; then
+  tmux send-keys -t "$TMUX_SESSION:services" \
+    "rdu $DEVCONTAINER && rde $DEVCONTAINER mise x -C /workspaces/rhythms -- dev" Enter
+else
+  tmux send-keys -t "$TMUX_SESSION:services" \
+    "echo 'devcontainer CLI not found -- start services manually'" Enter
+fi
+
+# Create hub window
+tmux new-window -t "$TMUX_SESSION" -n hub -c "$RHYTHMS_DIR"
+
+# Attach
+if [[ -n "${TMUX:-}" ]]; then
+  tmux switch-client -t "$TMUX_SESSION:hub"
+else
+  tmux attach-session -t "$TMUX_SESSION:hub"
+fi

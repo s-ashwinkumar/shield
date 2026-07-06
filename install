@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# rdev install -- Provision local AI dev environment
+set -euo pipefail
+
+RDEV_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/rdev"
+BIN_DIR="$HOME/.local/bin"
+NON_INTERACTIVE=false
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+warn() { echo -e "  ${YELLOW}!${NC} $1"; }
+fail() { echo -e "  ${RED}✗${NC} $1"; }
+info() { echo -e "  ${BLUE}→${NC} $1"; }
+
+# Parse args
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --defaults) NON_INTERACTIVE=true; shift ;;
+    *) echo "Usage: ./install [--defaults]"; exit 1 ;;
+  esac
+done
+
+echo ""
+echo "rdev -- Local AI Dev Environment"
+echo "================================"
+echo ""
+
+# ─── Prerequisites ───────────────────────────────────────────────────────────
+
+echo "Checking prerequisites..."
+echo ""
+
+MISSING_REQUIRED=false
+
+check_cmd() {
+  local name="$1"
+  local required="${2:-true}"
+  local brew_pkg="${3:-}"
+  local install_hint="${4:-}"
+
+  if command -v "$name" &>/dev/null; then
+    ok "$name"
+    return 0
+  fi
+
+  if [[ "$required" == "true" ]]; then
+    if [[ -n "$brew_pkg" ]] && command -v brew &>/dev/null; then
+      warn "$name not found"
+      if [[ "$NON_INTERACTIVE" == "true" ]]; then
+        info "Installing $name..."
+        brew install "$brew_pkg"
+        ok "$name installed"
+        return 0
+      else
+        read -rp "    Install $name via brew? [Y/n] " yn
+        if [[ "$yn" != [nN] ]]; then
+          brew install "$brew_pkg"
+          ok "$name installed"
+          return 0
+        fi
+      fi
+    fi
+    fail "$name not found${install_hint:+ -- $install_hint}"
+    MISSING_REQUIRED=true
+    return 1
+  else
+    warn "$name not found (optional)${install_hint:+ -- $install_hint}"
+    return 1
+  fi
+}
+
+# Check brew first (required, no auto-install)
+if ! command -v brew &>/dev/null; then
+  fail "brew not found -- install from https://brew.sh"
+  MISSING_REQUIRED=true
+else
+  ok "brew"
+fi
+
+check_cmd git true git || true
+check_cmd tmux true tmux || true
+check_cmd jq true jq || true
+check_cmd terminal-notifier true terminal-notifier "required for build/review/PR notifications" || true
+
+# Claude Code is required
+if command -v claude &>/dev/null; then
+  ok "claude"
+else
+  fail "claude not found -- install Claude Code: https://code.claude.com"
+  MISSING_REQUIRED=true
+fi
+
+# gh CLI for PR creation
+check_cmd gh true "" "install from https://cli.github.com" || true
+
+# Check devcontainer CLI (optional)
+check_cmd devcontainer false "" "npm install -g @devcontainers/cli (needed for rdev command)" || true
+
+echo ""
+
+if [[ "$MISSING_REQUIRED" == "true" ]]; then
+  echo -e "${RED}Missing required prerequisites. Fix the issues above and re-run.${NC}"
+  exit 1
+fi
+
+# ─── Interactive Setup ───────────────────────────────────────────────────────
+
+echo "Configuration"
+echo "─────────────"
+echo ""
+
+# Default project directory -- always rhythms, not the rdev repo itself
+DETECTED_DIR=""
+if [[ -d "$HOME/code/rhythms" ]]; then
+  DETECTED_DIR="$HOME/code/rhythms"
+fi
+
+if [[ "$NON_INTERACTIVE" == "true" ]]; then
+  RHYTHMS_DIR="${DETECTED_DIR:-$HOME/code/rhythms}"
+  WORKTREE_DIR="${RHYTHMS_DIR}/.claude/worktrees"
+  DEVCONTAINER="fullstack"
+else
+  read -rp "  Project directory [${DETECTED_DIR:-$HOME/code/rhythms}]: " RHYTHMS_DIR
+  RHYTHMS_DIR="${RHYTHMS_DIR:-${DETECTED_DIR:-$HOME/code/rhythms}}"
+
+  DEFAULT_WT="${RHYTHMS_DIR}/.claude/worktrees"
+  read -rp "  Worktree directory [$DEFAULT_WT]: " WORKTREE_DIR
+  WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WT}"
+
+  read -rp "  Devcontainer [fullstack]: " DEVCONTAINER
+  DEVCONTAINER="${DEVCONTAINER:-fullstack}"
+fi
+
+# Expand tildes
+RHYTHMS_DIR="${RHYTHMS_DIR/#\~/$HOME}"
+WORKTREE_DIR="${WORKTREE_DIR/#\~/$HOME}"
+
+echo ""
+
+# ─── Write Config ────────────────────────────────────────────────────────────
+
+info "Writing config to $CONFIG_DIR/config"
+mkdir -p "$CONFIG_DIR"
+
+sed \
+  -e "s|{rhythms_dir}|$RHYTHMS_DIR|g" \
+  -e "s|{worktree_dir}|$WORKTREE_DIR|g" \
+  "$RDEV_ROOT/config/config.example" > "$CONFIG_DIR/config"
+
+sed -i '' "s|^DEVCONTAINER=.*|DEVCONTAINER=$DEVCONTAINER|" "$CONFIG_DIR/config"
+
+ok "Config written"
+
+# ─── Symlink Scripts ─────────────────────────────────────────────────────────
+
+info "Symlinking scripts to $BIN_DIR"
+mkdir -p "$BIN_DIR"
+
+for script in "$RDEV_ROOT"/bin/*; do
+  name="$(basename "$script")"
+  [[ "$name" == _* ]] && continue  # Skip library files
+  chmod +x "$script"
+  ln -sf "$script" "$BIN_DIR/$name"
+done
+
+# Also make library executable
+chmod +x "$RDEV_ROOT/bin/_rdev_lib.sh"
+
+ok "Scripts symlinked"
+
+# ─── Ensure PATH ─────────────────────────────────────────────────────────────
+
+SHELL_RC="$HOME/.zshrc"
+if [[ "$(basename "$SHELL")" == "bash" ]]; then
+  SHELL_RC="$HOME/.bashrc"
+fi
+
+if ! echo "$PATH" | tr ':' '\n' | grep -q "^$BIN_DIR$"; then
+  if ! grep -q '# rdev PATH' "$SHELL_RC" 2>/dev/null; then
+    info "Adding $BIN_DIR to PATH in $SHELL_RC"
+    echo '' >> "$SHELL_RC"
+    echo '# rdev PATH' >> "$SHELL_RC"
+    echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$SHELL_RC"
+    ok "PATH updated (restart shell or: source $SHELL_RC)"
+  else
+    ok "PATH entry already exists in $SHELL_RC"
+  fi
+else
+  ok "$BIN_DIR already in PATH"
+fi
+
+# ─── tmux Config ─────────────────────────────────────────────────────────────
+
+TMUX_CONF="$HOME/.tmux.conf"
+
+if [[ -f "$TMUX_CONF" ]] && grep -q '# --- rdev begin ---' "$TMUX_CONF"; then
+  ok "tmux config already present"
+else
+  info "Appending tmux config to $TMUX_CONF"
+  echo '' >> "$TMUX_CONF"
+  cat "$RDEV_ROOT/config/tmux.conf" >> "$TMUX_CONF"
+  ok "tmux config added"
+fi
+
+# ─── Create Worktree Directory ───────────────────────────────────────────────
+
+if [[ ! -d "$WORKTREE_DIR" ]]; then
+  info "Creating worktree directory: $WORKTREE_DIR"
+  mkdir -p "$WORKTREE_DIR"
+  ok "Worktree directory created"
+else
+  ok "Worktree directory exists"
+fi
+
+# ─── Verify agents directory ──────────────────────────────────────────────────
+
+if [[ -d "$RDEV_ROOT/agents" ]]; then
+  agent_count=$(ls "$RDEV_ROOT"/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
+  ok "Found $agent_count agent definitions (coordinator, builder, reviewer)"
+else
+  fail "agents/ directory not found in rdev repo"
+fi
+
+# ─── Trigger Notification Permission ─────────────────────────────────────────
+
+if command -v terminal-notifier &>/dev/null; then
+  info "Triggering notification permission prompt..."
+  terminal-notifier -title "rdev" -message "Setup complete! Notifications enabled." -sound default -group rdev 2>/dev/null || true
+  ok "Notification permission requested"
+fi
+
+# ─── Summary ─────────────────────────────────────────────────────────────────
+
+echo ""
+echo "════════════════════════════════════════"
+echo -e "${GREEN}rdev installed successfully!${NC}"
+echo "════════════════════════════════════════"
+echo ""
+echo "  Config:     $CONFIG_DIR/config"
+echo "  Scripts:    $BIN_DIR/{rdev,rstream,rbuild,rpromote,runpromote,rforward,rresume,rstatus,rclean}"
+echo "  Agents:     $RDEV_ROOT/agents/{coordinator,builder,reviewer}.md"
+echo "  Worktrees:  $WORKTREE_DIR"
+echo ""
+echo "Workflow:"
+echo "  rdev                          # Start tmux session + services"
+echo "  rstream USENG-492             # Create workstream, plan with agent"
+echo "  rbuild USENG-492              # Approve plan → autonomous build"
+echo "  rpromote USENG-492            # Test on running services"
+echo "  rforward USENG-492            # Satisfied → code review loop"
+echo "  rresume USENG-492             # Resume completed stream for more work"
+echo "  rstatus                       # See what's running"
+echo "  rclean USENG-492              # Clean up when done"
+echo ""
+if ! echo "$PATH" | tr ':' '\n' | grep -q "^$BIN_DIR$"; then
+  echo -e "${YELLOW}Note: Restart your shell or run: source $SHELL_RC${NC}"
+  echo ""
+fi

@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+# rstream -- Start or resume a workstream for a ticket
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rstream <ticket> [options]
+
+Start or resume a workstream for a ticket. Launches the coordinator agent
+for interactive planning.
+
+By default, creates an isolated worktree. Use --local to work directly
+on the main repo (for larger features that need devcontainer/services).
+
+Arguments:
+  ticket              Ticket ID (e.g., USENG-492)
+
+Options:
+  --local             Work on main repo instead of a worktree
+  --design            Full design process (brainstorming → spec → plan) for larger features
+  --god               Fully autonomous — no user gates, build+test+review+PR without intervention
+  --branch <name>     Git branch name (default: stream/<ticket>)
+  --session <name>    tmux session to use (default: current session)
+  --base <branch>     Base branch (default: main)
+  --review-loops <n>  Max code review iterations (default: $MAX_REVIEW_LOOPS)
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+# Parse args
+TICKET=""
+BRANCH_FLAG=""
+BASE="main"
+LOCAL=false
+DESIGN=false
+GOD=false
+REVIEW_LOOPS="$MAX_REVIEW_LOOPS"
+SESSION_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --local) LOCAL=true; shift ;;
+    --design) DESIGN=true; shift ;;
+    --god) GOD=true; shift ;;
+    --branch) BRANCH_FLAG="$2"; shift 2 ;;
+    --session) SESSION_FLAG="$2"; shift 2 ;;
+    --base) BASE="$2"; shift 2 ;;
+    --review-loops) REVIEW_LOOPS="$2"; shift 2 ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) TICKET="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$TICKET" ]]; then
+  echo "Error: ticket ID required"
+  usage
+fi
+
+NAME="$TICKET"
+BRANCH="${BRANCH_FLAG:-stream/$NAME}"
+
+# Set work directory based on mode
+if [[ "$LOCAL" == "true" ]]; then
+  WORK_DIR="$RHYTHMS_DIR"
+else
+  WORK_DIR="$WORKTREE_DIR/$NAME"
+fi
+
+rdev_resolve_session
+rdev_ensure_session
+
+# --- Detect resume ---
+
+RESUMING=false
+STATE_FILE="$WORK_DIR/.claude/rdev/state.json"
+if [[ -f "$STATE_FILE" ]]; then
+  # In local mode, check if the state file is for THIS ticket
+  EXISTING_TICKET=$(jq -r '.ticket // ""' "$STATE_FILE" 2>/dev/null)
+  EXISTING_NAME=$(jq -r '.name // ""' "$STATE_FILE" 2>/dev/null)
+  if [[ "$EXISTING_TICKET" == "$TICKET" || "$EXISTING_NAME" == "$NAME" ]]; then
+    RESUMING=true
+    STAGE=$(rdev_get_stage_from "$STATE_FILE")
+    BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$BRANCH")
+    echo "Resuming stream '$NAME' (stage: $STAGE, branch: $BRANCH)"
+  else
+    # Different ticket — clean up old state and start fresh
+    echo "Found state for '$EXISTING_NAME' ($EXISTING_TICKET), replacing with '$NAME' ($TICKET)"
+    rm -f "$STATE_FILE"
+  fi
+fi
+
+# --- Setup (new streams only) ---
+
+if [[ "$RESUMING" == "false" ]]; then
+
+  if [[ "$LOCAL" == "true" ]]; then
+    # --- Local mode: branch on main repo ---
+
+    CURRENT_BRANCH=$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD)
+
+    # Check for uncommitted changes
+    if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
+      echo "Warning: main repo has uncommitted changes."
+      read -rp "Stash them and continue? [Y/n] " confirm
+      if [[ "$confirm" == [nN] ]]; then
+        echo "Aborted."
+        exit 1
+      fi
+      git -C "$RHYTHMS_DIR" stash push -m "rdev: auto-stash before rstream $NAME"
+    fi
+
+    # Create or checkout branch
+    if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+      # If branch is locked to a worktree, remove the worktree first
+      WT_PATH=$(git -C "$RHYTHMS_DIR" worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH" | grep "^worktree " | sed 's/^worktree //' || true)
+      if [[ -n "$WT_PATH" && "$WT_PATH" != "$RHYTHMS_DIR" ]]; then
+        echo "Branch '$BRANCH' is used by worktree at $WT_PATH. Removing worktree..."
+        git -C "$RHYTHMS_DIR" worktree remove "$WT_PATH" --force || {
+          echo "Warning: git worktree remove failed, force-removing directory..."
+          rm -rf "$WT_PATH"
+        }
+        git -C "$RHYTHMS_DIR" worktree prune
+      fi
+      echo "Branch '$BRANCH' exists, checking out..."
+      if ! git -C "$RHYTHMS_DIR" checkout "$BRANCH"; then
+        echo "Error: failed to checkout branch '$BRANCH'"
+        exit 1
+      fi
+    else
+      echo "Creating branch '$BRANCH' from '$BASE'..."
+      if ! git -C "$RHYTHMS_DIR" checkout -b "$BRANCH" "$BASE"; then
+        echo "Error: failed to create branch '$BRANCH' from '$BASE'"
+        exit 1
+      fi
+    fi
+
+  else
+    # --- Worktree mode ---
+
+    if [[ -d "$WORK_DIR" ]]; then
+      echo "Worktree '$NAME' already exists. Reusing."
+    else
+      mkdir -p "$WORKTREE_DIR"
+
+      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+        echo "Branch '$BRANCH' exists, creating worktree from it..."
+        if ! git -C "$RHYTHMS_DIR" worktree add "$WORK_DIR" "$BRANCH"; then
+          echo "Error: failed to create worktree for branch '$BRANCH'"
+          exit 1
+        fi
+      else
+        echo "Creating worktree '$NAME' from '$BASE'..."
+        if ! git -C "$RHYTHMS_DIR" worktree add "$WORK_DIR" -b "$BRANCH" "$BASE"; then
+          echo "Error: failed to create worktree '$NAME' from '$BASE'"
+          exit 1
+        fi
+      fi
+    fi
+
+    # Copy .local.env
+    if [[ -f "$RHYTHMS_DIR/.local.env" ]] && [[ ! -f "$WORK_DIR/.local.env" ]]; then
+      cp "$RHYTHMS_DIR/.local.env" "$WORK_DIR/.local.env"
+      echo "Copied .local.env"
+    fi
+
+    # Symlink docs/plans/ to main repo so plans survive worktree cleanup
+    mkdir -p "$RHYTHMS_DIR/docs/plans"
+    if [[ ! -e "$WORK_DIR/docs/plans" ]]; then
+      mkdir -p "$WORK_DIR/docs"
+      ln -sf "$RHYTHMS_DIR/docs/plans" "$WORK_DIR/docs/plans"
+      echo "Symlinked docs/plans/ to main repo"
+    fi
+
+    # Symlink .claude dir
+    if [[ -d "$RHYTHMS_DIR/.claude" ]] && [[ ! -e "$WORK_DIR/.claude" ]]; then
+      ln -s "$RHYTHMS_DIR/.claude" "$WORK_DIR/.claude"
+      echo "Symlinked .claude directory"
+    fi
+
+    # Copy rdev AGENTS into worktree's .claude/agents/ (agents stay per-worktree
+    # because they hold permission frontmatter the worktree session needs).
+    # SKILLS are NOT copied per-worktree anymore — they live user-wide at
+    # ~/.claude/skills/rdev/ (sync via: cp -r ~/code/rdev/skills/* ~/.claude/skills/rdev/).
+    # Per-worktree skill copies polluted .agents/skills/ via symlink chains and broke rpromote.
+    WORK_CLAUDE="$WORK_DIR/.claude"
+    if [[ -L "$WORK_CLAUDE" ]]; then
+      REAL_CLAUDE="$(readlink "$WORK_CLAUDE")"
+      rm "$WORK_CLAUDE"
+      mkdir -p "$WORK_CLAUDE/agents"
+
+      for item in "$REAL_CLAUDE"/*; do
+        item_name="$(basename "$item")"
+        if [[ "$item_name" != "agents" ]]; then
+          ln -sf "$item" "$WORK_CLAUDE/$item_name"
+        fi
+      done
+
+      cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
+      if [[ -d "$REAL_CLAUDE/agents" ]]; then
+        cp "$REAL_CLAUDE"/agents/*.md "$WORK_CLAUDE/agents/" 2>/dev/null || true
+      fi
+
+      echo "Set up .claude with rdev agents (skills come from ~/.claude/skills/rdev)"
+    else
+      mkdir -p "$WORK_CLAUDE/agents"
+      cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
+      echo "Copied rdev agents (skills come from ~/.claude/skills/rdev)"
+    fi
+  fi
+
+  # --- Initialize state ---
+
+  if [[ ! -f "$STATE_FILE" ]]; then
+    rdev_init_state_at "$WORK_DIR" "$NAME" "$TICKET" "$LOCAL" "$DESIGN" "$GOD"
+    echo "Initialized pipeline state"
+  fi
+
+  # --- Fetch ticket context ---
+
+  TICKET_FILE="$WORK_DIR/.claude/rdev/$TICKET.md"
+  if [[ ! -f "$TICKET_FILE" ]]; then
+    mkdir -p "$WORK_DIR/.claude/rdev"
+    echo "# $TICKET" > "$TICKET_FILE"
+    echo "" >> "$TICKET_FILE"
+    echo "Ticket context will be fetched by the coordinator agent via Linear MCP." >> "$TICKET_FILE"
+    echo "" >> "$TICKET_FILE"
+    echo "If Linear is unavailable, describe the task to the agent directly." >> "$TICKET_FILE"
+  fi
+
+  mkdir -p "$WORK_DIR/docs/plans"
+fi
+
+# --- Update agents/skills on resume ---
+
+if [[ "$RESUMING" == "true" ]] && [[ "$LOCAL" == "false" ]]; then
+  WORK_CLAUDE="$WORK_DIR/.claude"
+  mkdir -p "$WORK_CLAUDE/agents"
+  cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
+  echo "Updated agents from rdev (skills come from ~/.claude/skills/rdev)"
+fi
+
+
+# For local mode, copy agents only (skills come from ~/.claude/skills/rdev user-wide)
+if [[ "$LOCAL" == "true" ]]; then
+  mkdir -p "$RHYTHMS_DIR/.claude/agents"
+  cp "$RDEV_ROOT"/agents/*.md "$RHYTHMS_DIR/.claude/agents/"
+  echo "Copied rdev agents to main repo (skills come from ~/.claude/skills/rdev)"
+fi
+
+# --- Create Herdr tab (via rdev-mux); reuse on resume ---
+# Legacy tmux window/pane code removed — rdev-mux drives Herdr now.
+# Layout mirrors the old tmux design: coordinator in the LEFT pane (~70%),
+# companion shell split off to the RIGHT (~30%). The coordinator is launched via
+# `pane run` in the tab's root pane; Herdr tracks it through the global claude hook.
+# Ensure the project workspace exists (find-or-create), then make the stream tab in it.
+WS_ID="$(rdev-mux space-ensure --name "$RDEV_WORKSPACE" --cwd "$RHYTHMS_DIR")"
+if [[ -z "$WS_ID" ]]; then
+  echo "Error: no Herdr workspace '$RDEV_WORKSPACE'. Is the server running? (herdr status server)"
+  exit 1
+fi
+TAB_ID="$(rdev-mux tab-find --name "$NAME" --workspace "$WS_ID")"
+if [[ -z "$TAB_ID" ]]; then
+  TAB_ID="$(rdev-mux tab-new --name "$NAME" --cwd "$WORK_DIR" --workspace "$WS_ID")"
+fi
+if [[ -z "$TAB_ID" ]]; then
+  echo "Error: failed to create Herdr tab for '$NAME' in workspace '$RDEV_WORKSPACE'."
+  exit 1
+fi
+
+# Start rwatch if not already running
+if ! pgrep -f "rwatch" >/dev/null 2>&1; then
+  nohup "$SCRIPT_DIR/rwatch" 30 >/dev/null 2>&1 &
+  disown
+  echo "Started rwatch (background pane monitor)"
+fi
+
+# Permission mode: god mode gets full bypass, otherwise auto
+PERM_FLAG="--permission-mode auto"
+if [[ "$GOD" == "true" ]]; then
+  PERM_FLAG="--dangerously-skip-permissions"
+fi
+
+# Root pane of the tab = the LEFT/primary pane (will hold the coordinator).
+P0="$(rdev-mux pane-first --tab "$TAB_ID")"
+# Split the companion shell off to the RIGHT; ratio applies to the ORIGINAL pane,
+# so 0.7 keeps the coordinator at 70% on the left and the shell at 30% on the right.
+if [[ -n "$P0" ]]; then
+  rdev-mux pane-split --pane "$P0" --dir right --ratio 0.7 --cwd "$WORK_DIR" >/dev/null 2>&1 || true
+fi
+
+# Launch coordinator in the LEFT pane (fresh each run; it reads state.json to resume).
+# Tracked via the global claude hook; Herdr owns state display + notifications.
+COORD_CMD="claude --agent coordinator $PERM_FLAG -n rdev:$NAME 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'"
+if [[ -n "$P0" ]]; then
+  rdev-mux pane-run --pane "$P0" --text "$COORD_CMD"
+else
+  # Fallback: no root pane id — start as a tracked agent (Herdr default layout).
+  rdev-mux agent-start --name "$NAME" --cwd "$WORK_DIR" --tab "$TAB_ID" -- \
+    claude --agent coordinator $PERM_FLAG -n "rdev:$NAME" \
+    "Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning."
+fi
+
+# Land the user in the new stream tab (coordinator pane is focused).
+rdev-mux tab-focus --tab "$TAB_ID" >/dev/null 2>&1 || true
+echo "  Herdr tab: $TAB_ID"
+
+echo ""
+if [[ "$RESUMING" == "true" ]]; then
+  echo "Stream '$NAME' resumed (stage: $STAGE, branch: $BRANCH)"
+else
+  MODE="worktree"
+  [[ "$LOCAL" == "true" ]] && MODE="local"
+  [[ "$GOD" == "true" ]] && MODE="$MODE+god"
+  echo "Stream '$NAME' started (mode: $MODE, branch: $BRANCH)"
+fi
+echo "  Directory: $WORK_DIR"
+echo "  Agent: coordinator"
+echo ""
+
+if [[ "$RESUMING" == "false" ]]; then
+  echo "Plan with the agent, then run: rbuild $NAME"
+fi
+
+rdev_maybe_attach

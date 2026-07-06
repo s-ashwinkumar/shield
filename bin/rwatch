@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# rwatch -- Monitor rdev tmux panes for stuck permission prompts
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+INTERVAL="${1:-30}"  # Check every N seconds (default 30)
+
+# Patterns that indicate Claude is waiting for user input
+STUCK_PATTERNS=(
+  "Allow once"
+  "Allow always"
+  "Do you want to proceed"
+  "Press Enter to continue"
+  "What should Claude do"
+  "Interrupted"
+  "[Y/n]"
+  "[y/N]"
+  "Permission requested"
+)
+
+# Build a single grep pattern
+PATTERN=$(printf "|%s" "${STUCK_PATTERNS[@]}")
+PATTERN="${PATTERN:1}"  # Remove leading |
+
+# Track already-notified windows to avoid spam
+declare -A NOTIFIED
+
+echo "rwatch: monitoring rdev panes every ${INTERVAL}s (Ctrl+C to stop)"
+
+while true; do
+  # Get all tmux windows in the session
+  WINDOWS=$(/opt/homebrew/bin/tmux list-windows -t "$TMUX_SESSION" -F "#{window_name}" 2>/dev/null)
+
+  while IFS= read -r WINDOW; do
+    [[ -z "$WINDOW" ]] && continue
+
+    # Capture last 5 lines of pane 0 (the claude pane)
+    PANE_CONTENT=$(/opt/homebrew/bin/tmux capture-pane -t "$TMUX_SESSION:$WINDOW.0" -p -l 5 2>/dev/null)
+
+    if echo "$PANE_CONTENT" | grep -qE "$PATTERN"; then
+      # Check if we already notified for this window recently
+      if [[ "${NOTIFIED[$WINDOW]}" != "1" ]]; then
+        terminal-notifier \
+          -title "rdev: $WINDOW needs attention" \
+          -message "$(echo "$PANE_CONTENT" | grep -E "$PATTERN" | tail -1 | head -c 100)" \
+          -sound default \
+          -group "rdev-$WINDOW" 2>/dev/null || true
+        NOTIFIED[$WINDOW]="1"
+        echo "$(date +%H:%M:%S) ⚠ $WINDOW: waiting for input"
+      fi
+    else
+      # Clear notification state if no longer stuck
+      NOTIFIED[$WINDOW]=""
+    fi
+  done <<< "$WINDOWS"
+
+  sleep "$INTERVAL"
+done

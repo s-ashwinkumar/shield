@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# rstatus -- Show active workstreams with pipeline stages
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib_tmux.sh"
+rdev_load_config
+
+# Accept --session flag
+SESSION_FLAG=""
+for arg in "$@"; do
+  if [[ "$prev" == "--session" ]]; then SESSION_FLAG="$arg"; fi
+  prev="$arg"
+done
+rdev_resolve_session
+
+echo "=== Workstreams ==="
+echo ""
+
+HAS_STREAMS=false
+
+git -C "$RHYTHMS_DIR" worktree list 2>/dev/null | while IFS= read -r line; do
+  wt_path=$(echo "$line" | awk '{print $1}')
+
+  if [[ "$wt_path" == "$WORKTREE_DIR"* ]]; then
+    HAS_STREAMS=true
+    wt_name=$(basename "$wt_path")
+    wt_branch=$(echo "$line" | awk '{print $3}' | tr -d '[]')
+    last_commit=$(git -C "$wt_path" log -1 --format="%cr" 2>/dev/null || echo "unknown")
+
+    # Read pipeline state
+    state_file="$wt_path/.claude/rdev/state.json"
+    if [[ -f "$state_file" ]]; then
+      stage=$(jq -r '.stage // "unknown"' "$state_file")
+      ticket=$(jq -r '.ticket // "-"' "$state_file")
+      promoted=$(jq -r '.promoted // "false"' "$state_file")
+      review_loops=$(jq -r '.review_loops_done // 0' "$state_file")
+
+      # Stage indicator
+      case "$stage" in
+        plan)        stage_icon="📋 plan" ;;
+        build)       stage_icon="🔨 build" ;;
+        ux_review)   stage_icon="👁  ux review" ;;
+        code_review) stage_icon="🔍 code review ($review_loops loops)" ;;
+        pr)          stage_icon="📤 opening PR" ;;
+        done)        stage_icon="✅ done" ;;
+        *)           stage_icon="❓ $stage" ;;
+      esac
+
+      promoted_flag=""
+      if [[ "$promoted" == "true" ]]; then
+        promoted_flag=" [PROMOTED]"
+      fi
+
+      printf "  %-18s %-16s %-28s %s%s\n" "$wt_name" "$stage_icon" "$wt_branch" "(last: $last_commit)" "$promoted_flag"
+    else
+      printf "  %-18s %-16s %-28s %s\n" "$wt_name" "no state" "$wt_branch" "(last: $last_commit)"
+    fi
+  fi
+done
+
+if [[ "$HAS_STREAMS" == "false" ]]; then
+  echo "  No active workstreams."
+fi
+
+echo ""
+echo "=== tmux Windows ==="
+echo ""
+
+if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+  tmux list-windows -t "$TMUX_SESSION" -F "  #{window_index}: #{window_name} #{?window_active,(active),}" 2>/dev/null
+else
+  echo "  Session '$TMUX_SESSION' not running"
+fi
+
+echo ""
+echo "=== Services ==="
+echo ""
+
+declare -A ports=(
+  [webui]=3200
+  [railsapi]=3100
+  [mlai]=8000
+)
+
+for svc in "${!ports[@]}"; do
+  port=${ports[$svc]}
+  if curl -sf -o /dev/null --connect-timeout 1 "http://localhost:$port" 2>/dev/null; then
+    printf "  %-12s :%s  ✓ up\n" "$svc" "$port"
+  else
+    printf "  %-12s :%s  ✗ down\n" "$svc" "$port"
+  fi
+done

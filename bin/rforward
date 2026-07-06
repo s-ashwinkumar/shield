@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# rforward -- Advance pipeline past UX review to code review
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rforward <name>
+
+Advance the pipeline from UX review to code review. Unpromotes the branch
+and tells the coordinator to start the review loop.
+
+Arguments:
+  name    Stream name (ticket ID)
+
+Options:
+  --session <name>    tmux session (default: current session)
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+SESSION_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --session) SESSION_FLAG="$2"; shift 2 ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+rdev_resolve_session
+WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+
+# Read state — rforward is flexible, works from any pre-done stage
+STATE=$(rdev_read_state "$NAME")
+STAGE=$(echo "$STATE" | jq -r '.stage // "unknown"')
+if [[ "$STAGE" == "done" ]]; then
+  echo "Stream '$NAME' is already done."
+  exit 0
+fi
+
+# Unpromote if currently promoted
+PROMOTED=$(echo "$STATE" | jq -r '.promoted // "false"')
+if [[ "$PROMOTED" == "true" ]]; then
+  echo "Unpromoting branch from main repo..."
+  "$SCRIPT_DIR/runpromote" "$NAME"
+fi
+
+# Update state
+rdev_update_state "$NAME" "stage" "code_review"
+
+# Check the Herdr tab exists
+TAB_ID="$(rdev_stream_tab "$NAME")"
+if [[ -z "$TAB_ID" ]]; then
+  echo "Error: Herdr tab '$NAME' not found. Start it first: rstream $NAME"
+  exit 1
+fi
+
+MAX_LOOPS=$(echo "$STATE" | jq -r '.max_review_loops // 3')
+
+# Launch coordinator in review mode (new session with skip-permissions)
+# The prompt argument is the initial user message — coordinator will act on it immediately
+rdev_coord_msg "$TAB_ID" "Start Stage 3: CODE REVIEW. Dispatch the codex:codex-rescue subagent to review the diff vs main. If it finds Critical or Important issues, dispatch the builder to fix them, then re-review with codex. Loop up to $MAX_LOOPS times. Then proceed to Stage 4 (PR) and Stage 5 (PR comments). Fully autonomous — no user gates."
+
+echo "Code review started for '$NAME' (max $MAX_LOOPS loops)."
+echo "You'll get a notification when the PR is ready."

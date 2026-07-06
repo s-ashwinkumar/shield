@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# rdev-mux -- substrate adapter. rdev scripts call this instead of tmux/herdr.
+# Backend selected by RDEV_MUX_BACKEND: "herdr" (default) or "echo" (tests/dry-run).
+set -euo pipefail
+
+RDEV_MUX_BACKEND="${RDEV_MUX_BACKEND:-herdr}"
+
+# _mux_run <backend-label> [args...]
+# echo backend: print the full command it *would* run (dry-run / test).
+# herdr backend: exec it (label is the binary name).
+_mux_run() {
+  case "$RDEV_MUX_BACKEND" in
+    echo)  printf '%s' "$*" ;;
+    herdr) command "$@" ;;
+    *) echo "rdev-mux: unknown RDEV_MUX_BACKEND '$RDEV_MUX_BACKEND'" >&2; return 2 ;;
+  esac
+}
+
+# _jq <jq-args...> : herdr backend runs jq over the JSON on stdin; echo backend
+# passes the command string straight through (so tests assert command construction).
+_jq() {
+  if [[ "$RDEV_MUX_BACKEND" == "herdr" ]]; then jq -r "$@"; else cat; fi
+}
+
+# flag parser: sets name/cwd/tab/target/text/dir/ratio; argv after `--` lands in REST
+_parse() {
+  REST=(); name=""; cwd=""; tab=""; ws=""; pane=""; target=""; text=""; dir="right"; ratio="0.3"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) name="$2"; shift 2 ;;
+      --cwd) cwd="$2"; shift 2 ;;
+      --tab) tab="$2"; shift 2 ;;
+      --workspace) ws="$2"; shift 2 ;;
+      --pane) pane="$2"; shift 2 ;;
+      --target) target="$2"; shift 2 ;;
+      --text) text="$2"; shift 2 ;;
+      --dir) dir="$2"; shift 2 ;;
+      --ratio) ratio="$2"; shift 2 ;;
+      --) shift; REST=("$@"); break ;;
+      *) echo "rdev-mux: bad flag '$1'" >&2; return 2 ;;
+    esac
+  done
+}
+
+verb="${1:-}"; shift || true
+case "$verb" in
+  _selftest)   _mux_run herdr a b c ;;
+  server-ensure) _mux_run herdr status server ;;
+  space-ensure) _parse "$@"
+               existing="$(_mux_run herdr workspace list \
+                 | _jq --arg l "$name" 'first(.result.workspaces[]|select(.label==$l)|.workspace_id)//empty')"
+               if [[ -n "$existing" ]]; then printf '%s' "$existing"
+               else _mux_run herdr workspace create --cwd "$cwd" --label "$name" --no-focus \
+                      | _jq '.result.workspace.workspace_id'
+               fi ;;
+  space-find)  _parse "$@"; _mux_run herdr workspace list \
+                 | _jq --arg l "$name" 'first(.result.workspaces[]|select(.label==$l)|.workspace_id)//empty' ;;
+  tab-new)     _parse "$@"
+               args=(herdr tab create)
+               [[ -n "$ws" ]] && args+=(--workspace "$ws")
+               args+=(--cwd "$cwd" --label "$name" --no-focus)
+               _mux_run "${args[@]}" | _jq '.result.tab.tab_id' ;;
+  tab-find)    _parse "$@"; _mux_run herdr tab list \
+                 | _jq --arg l "$name" --arg w "$ws" \
+                   'first(.result.tabs[]|select(.label==$l and ($w=="" or .workspace_id==$w))|.tab_id)//empty' ;;
+  agent-start) _parse "$@"
+               args=(herdr agent start "$name" --cwd "$cwd")
+               [[ -n "$tab" ]] && args+=(--tab "$tab")
+               args+=(--no-focus -- "${REST[@]}")
+               _mux_run "${args[@]}" ;;
+  pane-split)  _parse "$@"
+               args=(herdr pane split)
+               [[ -n "$pane" ]] && args+=("$pane")
+               args+=(--direction "$dir" --ratio "$ratio" --cwd "$cwd" --no-focus)
+               _mux_run "${args[@]}" ;;
+  pane-first)  _parse "$@"; _mux_run herdr pane list \
+                 | _jq --arg t "$tab" 'first(.result.panes[]|select(.tab_id==$t)|.pane_id)//empty' ;;
+  pane-run)    _parse "$@"; _mux_run herdr pane run "$pane" "$text" ;;
+  send-text)   _parse "$@"; _mux_run herdr pane send-text "$pane" "$text" ;;
+  send-enter)  _parse "$@"; _mux_run herdr pane send-keys "$pane" Enter ;;
+  pane-rename) _parse "$@"; _mux_run herdr pane rename "$pane" "$name" ;;
+  tab-focus)   _parse "$@"; _mux_run herdr tab focus "$tab" ;;
+  list)        _mux_run herdr agent list ;;
+  stream-list) _parse "$@"; _mux_run herdr tab list \
+                 | _jq --arg w "$ws" '.result.tabs[]|select(.workspace_id==$w)|"  \(.label)  [\(.agent_status)]"' ;;
+  send)        _parse "$@"; _mux_run herdr agent send "$target" "$text" ;;
+  state)       _parse "$@"; _mux_run herdr agent get "$target" ;;
+  kill)        _parse "$@"; _mux_run herdr tab close "$tab" ;;
+  *) echo "rdev-mux: unknown verb '$verb'" >&2; exit 2 ;;
+esac

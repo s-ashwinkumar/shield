@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# rbuild -- Approve plan and start autonomous build
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib_tmux.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rbuild <name>
+
+Approve the plan and tell the coordinator to start building autonomously.
+
+Arguments:
+  name    Stream name (ticket ID)
+
+Options:
+  --session <name>    tmux session (default: current session)
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+SESSION_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --session) SESSION_FLAG="$2"; shift 2 ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+rdev_resolve_session
+WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+
+# Validate state
+STAGE=$(rdev_get_stage "$NAME")
+if [[ "$STAGE" != "plan" ]]; then
+  echo "Error: stream '$NAME' is in stage '$STAGE', expected 'plan'"
+  echo "rbuild can only be run after planning is complete."
+  exit 1
+fi
+
+# Check tmux window exists
+if ! tmux list-windows -t "$TMUX_SESSION" -F "#{window_name}" 2>/dev/null | grep -q "^${NAME}$"; then
+  echo "Error: tmux window '$NAME' not found."
+  exit 1
+fi
+
+# Update state
+rdev_update_state "$NAME" "stage" "build"
+
+# Launch coordinator in build mode (continues previous session)
+tmux send-keys -t "$TMUX_SESSION:$NAME.0" \
+  "cd $WORK_DIR && claude --agent coordinator -c -p 'Plan approved. Start building. Read the plan from docs/plans/ and implement it with the builder subagent. When done, update .claude/rdev/state.json stage to ux_review.' --dangerously-skip-permissions; terminal-notifier -title 'rdev' -message 'Build done: $NAME' -sound default -group rdev 2>/dev/null || true" Enter
+
+echo "Build started for '$NAME'."
+echo "You'll get a notification when it's done."

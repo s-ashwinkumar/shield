@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# rresume -- Resume work on a completed or paused stream
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib_tmux.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rresume <name> [options]
+
+Resume work on a stream that was previously completed or paused.
+Preserves existing state, plan, and review history.
+
+Arguments:
+  name    Stream name (ticket ID or custom name)
+
+Options:
+  --from <stage>      Stage to resume from (default: build)
+                      Stages: plan, build, code_review, pr_comments
+  --pr <number>       PR number (to find the branch if state is missing)
+  --local             Work on main repo (default if no worktree exists)
+  --worktree          Work in a worktree
+  --session <name>    tmux session (default: current session)
+  --god               Run fully autonomous after resuming
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+FROM_STAGE="build"
+PR_NUMBER=""
+SESSION_FLAG=""
+GOD=false
+MODE_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --from) FROM_STAGE="$2"; shift 2 ;;
+    --pr) PR_NUMBER="$2"; shift 2 ;;
+    --local) MODE_FLAG="local"; shift ;;
+    --worktree) MODE_FLAG="worktree"; shift ;;
+    --session) SESSION_FLAG="$2"; shift 2 ;;
+    --god) GOD=true; shift ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+# Validate stage
+case "$FROM_STAGE" in
+  plan|build|code_review|pr_comments) ;;
+  *) echo "Error: invalid stage '$FROM_STAGE'. Must be: plan, build, code_review, pr_comments"; exit 1 ;;
+esac
+
+rdev_resolve_session
+rdev_ensure_session
+
+RDEV_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+
+# --- Find the work directory and branch ---
+
+WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+STATE_FILE="$WORK_DIR/.claude/rdev/state.json"
+
+if [[ -f "$STATE_FILE" ]]; then
+  # Existing state found
+  STATE=$(cat "$STATE_FILE")
+  EXISTING_MODE=$(echo "$STATE" | jq -r '.mode // "worktree"')
+  TICKET=$(echo "$STATE" | jq -r '.ticket // ""')
+  OLD_STAGE=$(echo "$STATE" | jq -r '.stage // "unknown"')
+  BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+  echo "Found existing stream '$NAME' (stage: $OLD_STAGE, branch: $BRANCH, mode: $EXISTING_MODE)"
+
+  # If user explicitly wants a different mode, switch to the no-state path
+  if [[ -n "$MODE_FLAG" && "$MODE_FLAG" != "$EXISTING_MODE" ]]; then
+    echo "Switching from $EXISTING_MODE to $MODE_FLAG mode..."
+    # Keep ticket info but clear state so the no-state path reinitializes
+    TICKET=${TICKET:-$NAME}
+    rm -f "$STATE_FILE"
+    STATE_FILE=""
+  fi
+fi
+
+if [[ -z "$STATE_FILE" ]] || [[ ! -f "$STATE_FILE" ]]; then
+  # No state — try to find branch from PR or by name
+  BRANCH=""
+  if [[ -n "$PR_NUMBER" ]]; then
+    BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName -q .headRefName 2>/dev/null || echo "")
+    TICKET=$(echo "$NAME" | tr '[:lower:]' '[:upper:]')
+    if [[ -z "$BRANCH" ]]; then
+      echo "Error: could not find PR #$PR_NUMBER"
+      exit 1
+    fi
+    echo "Found PR #$PR_NUMBER on branch '$BRANCH'"
+  else
+    # Try common branch patterns
+    TICKET_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+    for pattern in "$NAME" "stream/$NAME" "$TICKET_LOWER"; do
+      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$pattern" 2>/dev/null; then
+        BRANCH="$pattern"
+        break
+      fi
+      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/remotes/origin/$pattern" 2>/dev/null; then
+        BRANCH="$pattern"
+        break
+      fi
+    done
+
+    # If not found, search for branches containing the ticket ID (e.g. ashwin/useng-582-feature-name)
+    if [[ -z "$BRANCH" ]]; then
+      MATCH=$(git -C "$RHYTHMS_DIR" branch -a 2>/dev/null | grep -i "$TICKET_LOWER" | head -1 | sed 's/^[ *+]*//' | sed 's|remotes/origin/||')
+      if [[ -n "$MATCH" ]]; then
+        BRANCH="$MATCH"
+      fi
+    fi
+
+    if [[ -z "$BRANCH" ]]; then
+      echo "Error: could not find branch for '$NAME'. Use --pr <number> to find it from a PR."
+      exit 1
+    fi
+    TICKET="$NAME"
+    echo "Found branch '$BRANCH'"
+  fi
+
+  # Determine mode: explicit flag > existing worktree > default to local
+  if [[ "$MODE_FLAG" == "worktree" ]]; then
+    MODE="worktree"
+  elif [[ "$MODE_FLAG" == "local" ]]; then
+    MODE="local"
+  elif [[ -d "$WORKTREE_DIR/$NAME" ]]; then
+    MODE="worktree"
+    echo "Found existing worktree at $WORKTREE_DIR/$NAME"
+  else
+    MODE="local"
+  fi
+
+  if [[ "$MODE" == "worktree" ]]; then
+    WORK_DIR="$WORKTREE_DIR/$NAME"
+    if [[ ! -d "$WORK_DIR" ]]; then
+      mkdir -p "$WORKTREE_DIR"
+
+      # If the branch is checked out in the main repo, switch main repo to main first
+      MAIN_BRANCH=$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+      if [[ "$MAIN_BRANCH" == "$BRANCH" ]]; then
+        echo "Branch '$BRANCH' is checked out in main repo. Switching main repo to main..."
+        git -C "$RHYTHMS_DIR" checkout main
+      fi
+
+      # If the branch is locked to another worktree, remove it first
+      WT_PATH=$(git -C "$RHYTHMS_DIR" worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH" | grep "^worktree " | sed 's/^worktree //' || true)
+      if [[ -n "$WT_PATH" && "$WT_PATH" != "$RHYTHMS_DIR" && "$WT_PATH" != "$WORK_DIR" ]]; then
+        echo "Branch '$BRANCH' is used by worktree at $WT_PATH. Removing..."
+        git -C "$RHYTHMS_DIR" worktree remove "$WT_PATH" --force 2>/dev/null || rm -rf "$WT_PATH"
+        git -C "$RHYTHMS_DIR" worktree prune
+      fi
+
+      echo "Creating worktree '$NAME' on branch '$BRANCH'..."
+      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+        git -C "$RHYTHMS_DIR" worktree add "$WORK_DIR" "$BRANCH"
+      else
+        git -C "$RHYTHMS_DIR" worktree add "$WORK_DIR" -b "$BRANCH" "origin/$BRANCH"
+      fi
+    fi
+
+    # Symlink docs/plans/ to main repo so plans survive worktree cleanup
+    mkdir -p "$RHYTHMS_DIR/docs/plans"
+    if [[ ! -e "$WORK_DIR/docs/plans" ]]; then
+      mkdir -p "$WORK_DIR/docs"
+      ln -sf "$RHYTHMS_DIR/docs/plans" "$WORK_DIR/docs/plans"
+      echo "Symlinked docs/plans/ to main repo"
+    fi
+  else
+    WORK_DIR="$RHYTHMS_DIR"
+  fi
+
+  # Checkout the branch (local mode only — worktree is already on the right branch)
+  if [[ "$MODE" == "local" ]]; then
+    CURRENT_BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
+      if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
+        echo "Warning: main repo has uncommitted changes."
+        read -rp "Stash them and continue? [Y/n] " confirm
+        if [[ "$confirm" == [nN] ]]; then
+          echo "Aborted."
+          exit 1
+        fi
+        git -C "$RHYTHMS_DIR" stash push -m "rdev: auto-stash before rresume $NAME"
+      fi
+
+      # Checkout — create local tracking branch if needed
+      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+        git -C "$RHYTHMS_DIR" checkout "$BRANCH"
+      else
+        git -C "$RHYTHMS_DIR" checkout -b "$BRANCH" "origin/$BRANCH"
+      fi
+    fi
+  fi
+
+  # Initialize state
+  mkdir -p "$WORK_DIR/.claude/rdev"
+  cat > "$WORK_DIR/.claude/rdev/state.json" <<EOF
+{
+  "stage": "$FROM_STAGE",
+  "name": "$NAME",
+  "ticket": "$TICKET",
+  "mode": "$MODE",
+  "design": false,
+  "god_mode": $GOD,
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "resumed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "review_loops_done": 0,
+  "max_review_loops": $MAX_REVIEW_LOOPS,
+  "promoted": false
+}
+EOF
+
+  # Create ticket file if missing
+  TICKET_FILE="$WORK_DIR/.claude/rdev/$TICKET.md"
+  if [[ ! -f "$TICKET_FILE" ]]; then
+    echo "# $TICKET" > "$TICKET_FILE"
+    echo "" >> "$TICKET_FILE"
+    echo "Resumed from existing branch. Ticket context will be fetched by the coordinator." >> "$TICKET_FILE"
+  fi
+
+  mkdir -p "$WORK_DIR/docs/plans"
+  echo "Initialized state at stage '$FROM_STAGE'"
+fi
+
+# --- Update state to the requested stage ---
+
+STATE_FILE="$WORK_DIR/.claude/rdev/state.json"
+if [[ -f "$STATE_FILE" ]]; then
+  # Update stage
+  tmp=$(jq --arg s "$FROM_STAGE" '.stage = $s' "$STATE_FILE")
+  if [[ "$GOD" == "true" ]]; then
+    tmp=$(echo "$tmp" | jq '.god_mode = true')
+  fi
+  tmp=$(echo "$tmp" | jq --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.resumed_at = $t')
+  echo "$tmp" > "$STATE_FILE"
+  echo "State reset to stage '$FROM_STAGE'"
+fi
+
+# --- Copy latest agents ---
+
+mkdir -p "$WORK_DIR/.claude/agents"
+cp "$RDEV_ROOT"/agents/*.md "$WORK_DIR/.claude/agents/"
+echo "Updated agents from rdev"
+
+# --- Create tmux window + launch coordinator ---
+
+WINDOW_EXISTS=false
+if tmux list-windows -t "$TMUX_SESSION" -F "#{window_name}" 2>/dev/null | grep -q "^${NAME}$"; then
+  WINDOW_EXISTS=true
+fi
+
+if [[ "$WINDOW_EXISTS" == "false" ]]; then
+  if ! tmux new-window -t "$TMUX_SESSION" -n "$NAME" -c "$WORK_DIR" 2>&1; then
+    echo "Error: failed to create tmux window in session '$TMUX_SESSION'"
+    exit 1
+  fi
+  tmux split-window -t "$TMUX_SESSION:$NAME" -h -p 30 -c "$WORK_DIR"
+  tmux set-option -wt "$TMUX_SESSION:$NAME" automatic-rename off 2>/dev/null
+  tmux set-option -wt "$TMUX_SESSION:$NAME" @manual_title 1 2>/dev/null
+  tmux set-option -wt "$TMUX_SESSION:$NAME" monitor-activity off 2>/dev/null
+fi
+
+# Start rwatch if not already running
+if ! pgrep -f "rwatch" >/dev/null 2>&1; then
+  nohup "$SCRIPT_DIR/rwatch" 30 >/dev/null 2>&1 &
+  disown
+  echo "Started rwatch (background pane monitor)"
+fi
+
+# Permission mode
+PERM_FLAG="--permission-mode auto"
+if [[ "$GOD" == "true" ]]; then
+  PERM_FLAG="--dangerously-skip-permissions"
+fi
+
+# Launch coordinator — fresh session since we're resuming from a new starting point
+tmux send-keys -t "$TMUX_SESSION:$NAME.0" \
+  "cd $WORK_DIR && claude --agent coordinator $PERM_FLAG -n 'rdev:$NAME'; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true" Enter
+
+echo ""
+echo "Stream '$NAME' resumed at stage '$FROM_STAGE'"
+echo "  Directory: $WORK_DIR"
+echo "  Branch: $(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+echo "  Tmux: $TMUX_SESSION:$NAME"

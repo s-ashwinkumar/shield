@@ -1,0 +1,39 @@
+{
+  "name": "rdev-init",
+  "version": "0.1.0",
+  "description": "Install the rdev AI development pipeline into your project — works with Claude Code, Cursor, and Codex CLI.",
+  "bin": {
+    "rdev-init": "./bin/rdev-init.js"
+  },
+  "files": [
+    "bin/",
+    "setup",
+    "skills/",
+    "agents/",
+    "process/",
+    "adapters/",
+    "templates/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "keywords": [
+    "claude-code",
+    "cursor",
+    "codex",
+    "ai",
+    "skills",
+    "pipeline",
+    "agents"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GetRhythms/rdev.git"
+  }
+}

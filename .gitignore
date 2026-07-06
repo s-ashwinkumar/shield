@@ -1,0 +1,8 @@
+.env.local
+.DS_Store
+node_modules/
+node-compile-cache/
+*.log
+
+# Slidev presentation deck (large; track separately if needed)
+docs/presentation/

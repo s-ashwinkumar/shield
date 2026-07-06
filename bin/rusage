@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""rusage -- Summarize Claude Code token usage across all sessions."""
+
+import json
+import os
+import sys
+from collections import defaultdict
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# Pricing per 1M tokens (Opus rates for cost estimation)
+PRICING = {
+    "input": 15.0,
+    "output": 75.0,
+    "cache_read": 1.5,
+    "cache_write": 18.75,
+}
+
+def parse_session(filepath):
+    """Parse a single session JSONL file."""
+    session_name = None
+    model = None
+    first_ts = None
+    last_ts = None
+    total_input = 0
+    total_output = 0
+    total_cache_read = 0
+    total_cache_write = 0
+    message_count = 0
+
+    with open(filepath, "r") as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            # Get session name
+            if not session_name and entry.get("type") == "summary":
+                session_name = entry.get("sessionName", "")
+
+            # Get timestamp range
+            ts = entry.get("timestamp")
+            if ts:
+                if not first_ts:
+                    first_ts = ts
+                last_ts = ts
+
+            # Get model
+            if not model and entry.get("message", {}).get("model"):
+                model = entry["message"]["model"]
+
+            # Extract usage from assistant messages
+            usage = None
+            if entry.get("type") == "assistant" and "message" in entry:
+                usage = entry["message"].get("usage")
+            if not usage:
+                usage = entry.get("usage")
+
+            if usage and isinstance(usage, dict):
+                total_input += usage.get("input_tokens", 0)
+                total_output += usage.get("output_tokens", 0)
+                total_cache_read += usage.get("cache_read_input_tokens", 0)
+                total_cache_write += usage.get("cache_creation_input_tokens", 0)
+                message_count += 1
+
+    return {
+        "file": os.path.basename(filepath),
+        "name": session_name or "unnamed",
+        "model": model or "unknown",
+        "first_ts": first_ts,
+        "last_ts": last_ts,
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "cache_read": total_cache_read,
+        "cache_write": total_cache_write,
+        "messages": message_count,
+    }
+
+
+def estimate_cost(input_t, output_t, cache_read, cache_write):
+    """Estimate cost at API rates."""
+    cost = (
+        input_t / 1_000_000 * PRICING["input"]
+        + output_t / 1_000_000 * PRICING["output"]
+        + cache_read / 1_000_000 * PRICING["cache_read"]
+        + cache_write / 1_000_000 * PRICING["cache_write"]
+    )
+    return cost
+
+
+def fmt_tokens(n):
+    """Format token count."""
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    elif n >= 1_000:
+        return f"{n/1_000:.1f}K"
+    return str(n)
+
+
+def fmt_cost(c):
+    return f"${c:.2f}"
+
+
+def main():
+    projects_dir = Path.home() / ".claude" / "projects"
+
+    # Find all JSONL files across all projects
+    all_files = []
+    for project_dir in projects_dir.iterdir():
+        if project_dir.is_dir():
+            for f in project_dir.glob("*.jsonl"):
+                all_files.append(f)
+
+    if not all_files:
+        print("No session logs found.")
+        return
+
+    print(f"Scanning {len(all_files)} sessions...\n")
+
+    sessions = []
+    for f in sorted(all_files):
+        try:
+            s = parse_session(f)
+            if s["messages"] > 0:
+                sessions.append(s)
+        except Exception as e:
+            pass
+
+    if not sessions:
+        print("No sessions with usage data found.")
+        return
+
+    # Sort by timestamp
+    sessions.sort(key=lambda s: s["first_ts"] or "")
+
+    # Aggregate
+    total_input = sum(s["input_tokens"] for s in sessions)
+    total_output = sum(s["output_tokens"] for s in sessions)
+    total_cache_read = sum(s["cache_read"] for s in sessions)
+    total_cache_write = sum(s["cache_write"] for s in sessions)
+    total_cost = estimate_cost(total_input, total_output, total_cache_read, total_cache_write)
+
+    # Daily aggregation
+    daily = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "sessions": 0})
+    for s in sessions:
+        if s["first_ts"]:
+            day = s["first_ts"][:10]
+            daily[day]["input"] += s["input_tokens"]
+            daily[day]["output"] += s["output_tokens"]
+            daily[day]["cache_read"] += s["cache_read"]
+            daily[day]["cache_write"] += s["cache_write"]
+            daily[day]["sessions"] += 1
+
+    # rdev vs non-rdev
+    rdev_sessions = [s for s in sessions if s["name"] and "rdev:" in s["name"]]
+    other_sessions = [s for s in sessions if not s["name"] or "rdev:" not in s["name"]]
+
+    # Print summary
+    print("=" * 70)
+    print("CLAUDE CODE USAGE SUMMARY")
+    print("=" * 70)
+    print(f"  Sessions:        {len(sessions)}")
+    if sessions[0]["first_ts"]:
+        print(f"  Date range:      {sessions[0]['first_ts'][:10]} → {sessions[-1]['first_ts'][:10]}")
+    print(f"  Input tokens:    {fmt_tokens(total_input)}")
+    print(f"  Output tokens:   {fmt_tokens(total_output)}")
+    print(f"  Cache read:      {fmt_tokens(total_cache_read)}")
+    print(f"  Cache write:     {fmt_tokens(total_cache_write)}")
+    print(f"  Est. API cost:   {fmt_cost(total_cost)} (if on Opus API pricing)")
+    print()
+
+    # rdev breakdown
+    if rdev_sessions:
+        rdev_input = sum(s["input_tokens"] for s in rdev_sessions)
+        rdev_output = sum(s["output_tokens"] for s in rdev_sessions)
+        rdev_cr = sum(s["cache_read"] for s in rdev_sessions)
+        rdev_cw = sum(s["cache_write"] for s in rdev_sessions)
+        rdev_cost = estimate_cost(rdev_input, rdev_output, rdev_cr, rdev_cw)
+        other_input = sum(s["input_tokens"] for s in other_sessions)
+        other_output = sum(s["output_tokens"] for s in other_sessions)
+        other_cost = total_cost - rdev_cost
+
+        print("-" * 70)
+        print("BREAKDOWN: rdev vs other")
+        print("-" * 70)
+        print(f"  rdev sessions:   {len(rdev_sessions):>4}   input: {fmt_tokens(rdev_input):>8}   output: {fmt_tokens(rdev_output):>8}   cost: {fmt_cost(rdev_cost)}")
+        print(f"  other sessions:  {len(other_sessions):>4}   input: {fmt_tokens(other_input):>8}   output: {fmt_tokens(other_output):>8}   cost: {fmt_cost(other_cost)}")
+        print()
+
+    # Daily breakdown (last 7 days)
+    print("-" * 70)
+    print("DAILY USAGE (last 7 days)")
+    print("-" * 70)
+    print(f"  {'Date':<12} {'Sessions':>8} {'Input':>10} {'Output':>10} {'Est. Cost':>10}")
+    print(f"  {'─'*12} {'─'*8} {'─'*10} {'─'*10} {'─'*10}")
+
+    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    for day in sorted(daily.keys()):
+        if day >= cutoff:
+            d = daily[day]
+            cost = estimate_cost(d["input"], d["output"], d["cache_read"], d["cache_write"])
+            print(f"  {day:<12} {d['sessions']:>8} {fmt_tokens(d['input']):>10} {fmt_tokens(d['output']):>10} {fmt_cost(cost):>10}")
+    print()
+
+    # Top sessions by output tokens
+    print("-" * 70)
+    print("TOP 10 SESSIONS BY OUTPUT")
+    print("-" * 70)
+    print(f"  {'Name':<35} {'Output':>10} {'Input':>10} {'Est. Cost':>10}")
+    print(f"  {'─'*35} {'─'*10} {'─'*10} {'─'*10}")
+
+    top = sorted(sessions, key=lambda s: s["output_tokens"], reverse=True)[:10]
+    for s in top:
+        name = (s["name"] or "unnamed")[:35]
+        cost = estimate_cost(s["input_tokens"], s["output_tokens"], s["cache_read"], s["cache_write"])
+        print(f"  {name:<35} {fmt_tokens(s['output_tokens']):>10} {fmt_tokens(s['input_tokens']):>10} {fmt_cost(cost):>10}")
+    print()
+
+
+if __name__ == "__main__":
+    main()

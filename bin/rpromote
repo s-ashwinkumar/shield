@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# rpromote -- Move main repo to the worktree's branch and clean up the worktree
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rpromote <name>
+
+Move the main repo to the worktree's branch for testing. Ensures all changes
+are committed, removes the worktree, and checks out the branch on main repo.
+
+After this, you're working directly on the branch — no more worktree.
+Services pick up changes immediately.
+
+Arguments:
+  name    Stream name (ticket ID)
+
+Options:
+  -h, --help    Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+STATE=$(rdev_read_state "$NAME")
+MODE=$(echo "$STATE" | jq -r '.mode // "worktree"')
+
+if [[ "$MODE" == "local" ]]; then
+  echo "Already in local mode — services are running with this code."
+  exit 0
+fi
+
+BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [[ -z "$BRANCH" ]]; then
+  echo "Error: could not determine branch for '$NAME'"
+  exit 1
+fi
+
+echo "Promoting '$NAME' (branch: $BRANCH)"
+echo ""
+
+# --- Step 1: Check for uncommitted changes in worktree ---
+
+if ! git -C "$WORK_DIR" diff --quiet 2>/dev/null || ! git -C "$WORK_DIR" diff --cached --quiet 2>/dev/null; then
+  echo "Uncommitted changes in worktree:"
+  git -C "$WORK_DIR" status --short
+  echo ""
+  read -rp "Commit them before promoting? [Y/n] " confirm
+  if [[ "$confirm" == [nN] ]]; then
+    echo "Aborted. Commit or stash your changes first."
+    exit 1
+  fi
+  git -C "$WORK_DIR" add -A
+  git -C "$WORK_DIR" commit -m "wip: uncommitted changes before promote"
+  echo "Changes committed."
+fi
+
+# --- Step 2: Check for uncommitted changes in main repo ---
+
+if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
+  echo "Warning: main repo has uncommitted changes."
+  read -rp "Stash them and continue? [Y/n] " confirm
+  if [[ "$confirm" == [nN] ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+  git -C "$RHYTHMS_DIR" stash push -m "rdev: auto-stash before rpromote $NAME"
+  echo "Main repo changes stashed."
+fi
+
+# --- Step 3: Remove the worktree ---
+
+WORKTREE_PATH="$WORKTREE_DIR/$NAME"
+if [[ -d "$WORKTREE_PATH" ]]; then
+  echo "Removing worktree..."
+  git -C "$RHYTHMS_DIR" worktree remove "$WORKTREE_PATH" --force 2>/dev/null || {
+    echo "Warning: git worktree remove failed, force-removing directory..."
+    rm -rf "$WORKTREE_PATH"
+  }
+  git -C "$RHYTHMS_DIR" worktree prune 2>/dev/null
+fi
+
+# --- Step 4: Checkout the branch on main repo ---
+
+echo "Switching main repo to branch '$BRANCH'..."
+if ! git -C "$RHYTHMS_DIR" checkout "$BRANCH"; then
+  echo "Error: failed to checkout '$BRANCH'"
+  exit 1
+fi
+
+# --- Step 5: Update state to local mode ---
+
+STATE_DIR="$RHYTHMS_DIR/.claude/rdev"
+mkdir -p "$STATE_DIR"
+
+# Move state from worktree location to main repo if it existed
+if [[ -f "$WORKTREE_PATH/.claude/rdev/state.json" ]]; then
+  cp "$WORKTREE_PATH/.claude/rdev/state.json" "$STATE_DIR/state.json" 2>/dev/null || true
+fi
+
+# Update mode to local
+if [[ -f "$STATE_DIR/state.json" ]]; then
+  tmp=$(jq '.mode = "local"' "$STATE_DIR/state.json")
+  echo "$tmp" > "$STATE_DIR/state.json"
+fi
+
+# Copy rdev agents and skills to main repo
+mkdir -p "$RHYTHMS_DIR/.claude/agents" "$RHYTHMS_DIR/.claude/skills"
+RDEV_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cp "$RDEV_ROOT"/agents/*.md "$RHYTHMS_DIR/.claude/agents/" 2>/dev/null || true
+cp -r "$RDEV_ROOT"/skills/* "$RHYTHMS_DIR/.claude/skills/" 2>/dev/null || true
+
+# --- Step 6: Note about tmux window ---
+# Don't kill the tmux window — user might be running this from it
+
+echo ""
+echo "Done. Main repo is now on branch '$BRANCH'."
+echo "Services will pick up changes immediately."
+echo ""
+echo "You're now in local mode — work directly on the main repo."
+echo "Use rforward or tell the coordinator to continue the pipeline."

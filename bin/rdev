@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# rdev -- Create/focus the project's Herdr workspace (holds all stream tabs).
+# Analog of the old tmux session bootstrap: one workspace per project; each
+# `rstream <ticket>` then opens a tab (coordinator + shell panes) inside it.
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+WS_NAME="${1:-$RDEV_WORKSPACE}"
+
+# Herdr's persistent server is the "session". Require it up.
+if ! rdev-mux server-ensure >/dev/null 2>&1; then
+  echo "Herdr server not running. Launch it once with 'herdr', then re-run: rdev $WS_NAME" >&2
+  exit 1
+fi
+
+# Find-or-create the project workspace.
+WS_ID="$(rdev-mux space-ensure --name "$WS_NAME" --cwd "$RHYTHMS_DIR")"
+if [[ -z "$WS_ID" ]]; then
+  echo "Error: could not create/find Herdr workspace '$WS_NAME'." >&2
+  echo "Check: herdr status server" >&2
+  exit 1
+fi
+
+herdr workspace focus "$WS_ID" >/dev/null 2>&1 || true
+echo "Herdr workspace '$WS_NAME' ready ($WS_ID)."
+echo "Open streams inside it:  rstream <ticket>"
+
+# NOTE: devcontainer/services auto-start (old tmux 'services' window) is deferred
+# to the lease work (Phase-1 Plan 5). Start services manually for now.
