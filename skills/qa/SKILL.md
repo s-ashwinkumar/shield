@@ -105,6 +105,17 @@ For each fixed bug:
 4. If passes, commit: `test(qa): regression test for ISSUE-NNN`
 5. If fails after one attempt, skip and note in report
 
+### Evidence capture (required — reviewers judge on proof, not the diff)
+
+Collect reviewer-visible proof the change works, into `.claude/rdev/evidence/<ticket>/`:
+- Screenshots of each key state (before/after the changed behavior), named by step.
+- For a flow, a numbered screenshot sequence (or a short screen recording if available).
+- For non-visual changes, the relevant command output / logs.
+
+Reference these artifact paths in the QA Report **and** in the PR body, so a reviewer
+(or you, later) can see the change working without re-running it. This evidence is what
+lets QA stand on its own instead of being a live manual step.
+
 ### Phase 6: Report
 
 ```
@@ -134,7 +145,7 @@ Push all fixes: `git push`
 ## Rules
 - Read the plan's QA Test Plan FIRST — don't ignore it
 - If not logged in, ask the user — don't try to automate auth
-- Take screenshots as evidence
+- Capture evidence into `.claude/rdev/evidence/<ticket>/` and link it in the PR (see Evidence capture)
 - Re-verify every fix in the browser before moving on
 - Don't fix cosmetic issues
 - Don't refactor while fixing — minimal changes only
