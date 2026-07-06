@@ -13,8 +13,9 @@ The whole tmux stack was snapshotted to `rt*` on 2026-07-06, so `rt*` never need
 | `rdev` | ✅ ported | `rtdev` | plain: creates/focuses the `rhythms` **workspace** |
 | `rstream` | ✅ ported | `rtstream` | plain: stream = **tab** (coordinator L70% + shell R30%), via `rdev-mux` |
 | `rclean` | ✅ ported | `rtclean` | plain: closes the Herdr **tab** (by label, in `rhythms` ws) + removes worktree + branch prompt |
-| `rpromote` | ⬜ TODO | `rtpromote` | lease/promote rework = Plan 5 |
-| `runpromote` | ⬜ TODO | `rtunpromote` | " |
+| `rpromote` | ⏸ DEFERRED | `rtpromote` | live-server switching — needs hands-on (topology unclear, disruptive). Design: `plan5` note. Use tmux `rtpromote` meanwhile. |
+| `runpromote` | ⏸ DEFERRED | `rtunpromote` | " |
+| `rlocal` | ✅ new | — | lease CLI for the single local server (Plan 5, part). Tests 12/12. |
 | `rforward` | ✅ ported | `rtforward` | plain: **types the instruction into the LIVE coordinator + Enter** (`rdev_coord_msg`) — no exit/relaunch |
 | `rbuild` | ✅ ported | `rtbuild` | plain: **types "plan approved, build" into the LIVE coordinator + Enter** (`rdev_coord_msg`); blocked shows in sidebar if it prompts |
 | `rresume` | ✅ ported | `rtresume` | plain: find-or-create tab (guarded so resume doesn't re-split), launch coordinator |
@@ -32,6 +33,8 @@ The whole tmux stack was snapshotted to `rt*` on 2026-07-06, so `rt*` never need
 The tmux `rt*` copy already exists and is frozen — so porting = **edit the plain command only** to drive herdr via `rdev-mux` (never touch `rt*`). Update this table's status when done.
 
 ## Next up
-Only **`rpromote`/`runpromote`** remain — that's the lease + movable-mount work (**Plan 5**), the hardest piece. Everything else is ported: `rdev`, `rstream`, `rbuild`, `rforward`, `rresume`, `rstatus`, `rclean`. Plan 3 (dependency sharing) is independent and can go anytime.
+Only **`rpromote`/`runpromote`** remain — the lease + live-server work (**Plan 5**), the hardest/riskiest piece. Everything else ported: `rdev`, `rstream`, `rbuild`, `rforward`, `rresume`, `rstatus`, `rclean`.
+
+**Plan 4 DONE** (`9d63a89`): worktree-in-container correctness — git-path alias + mise-trust + dep-share, wired into `rstream`. Kills silent wrong-code testing (verified live). Plan 3's dep-share folded in here (mlai shares `POETRY_CACHE_DIR`, not `.venv`).
 
 Known minor edge: `rstream` re-run on an *existing* ticket tab would re-split a 3rd pane (no `TAB_CREATED` guard like `rresume` has). Low priority — new work uses fresh tickets, resume uses `rresume`. Add the guard when convenient.
