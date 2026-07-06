@@ -13,8 +13,8 @@ The whole tmux stack was snapshotted to `rt*` on 2026-07-06, so `rt*` never need
 | `rdev` | ✅ ported | `rtdev` | plain: creates/focuses the `rhythms` **workspace** |
 | `rstream` | ✅ ported | `rtstream` | plain: stream = **tab** (coordinator L70% + shell R30%), via `rdev-mux` |
 | `rclean` | ✅ ported | `rtclean` | plain: closes the Herdr **tab** (by label, in `rhythms` ws) + removes worktree + branch prompt |
-| `rpromote` | ⏸ DEFERRED | `rtpromote` | live-server switching — needs hands-on (topology unclear, disruptive). Design: `plan5` note. Use tmux `rtpromote` meanwhile. |
-| `runpromote` | ⏸ DEFERRED | `rtunpromote` | " |
+| `rpromote` | ✅ ported ⚠ untested | `rtpromote` | claim lease → `rdev_serve` repoints in-container `dev` at the worktree. NOT live-tested (restarts the app). |
+| `runpromote` | ✅ ported ⚠ untested | `rtunpromote` | `rdev_serve` main → release lease. NOT live-tested. |
 | `rlocal` | ✅ new | — | lease CLI for the single local server (Plan 5, part). Tests 12/12. |
 | `rforward` | ✅ ported | `rtforward` | plain: **types the instruction into the LIVE coordinator + Enter** (`rdev_coord_msg`) — no exit/relaunch |
 | `rbuild` | ✅ ported | `rtbuild` | plain: **types "plan approved, build" into the LIVE coordinator + Enter** (`rdev_coord_msg`); blocked shows in sidebar if it prompts |
