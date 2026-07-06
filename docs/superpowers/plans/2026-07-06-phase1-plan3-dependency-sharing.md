@@ -33,7 +33,20 @@ tests/rdev-deps.test.sh  # NEW — unit tests for divergence detection (pure, no
 
 ---
 
-### Task 1 (SPIKE): verify symlink-sharing actually works per language in-container
+## SPIKE RESULTS (2026-07-06 — run against fullstack-fullstack-1)
+
+- **Node (`node_modules` symlink): ✓** vitest ran in-container, 15 passed.
+- **Ruby (`BUNDLE_PATH`/`.cache/bundle` symlink): ✓** `bundle check` → "dependencies are satisfied".
+- **Python (poetry): `.venv` symlink is IGNORED** — poetry uses `POETRY_CACHE_DIR` (`$WORKDIR/.cache/pypoetry/virtualenvs`), so it made a *fresh* venv. → mlai's share target is **`mlai/.cache/pypoetry`**, not `.venv`. (Symlinking that dir should share; verify.)
+- **TWO prerequisites discovered (blockers, not optional):**
+  1. **`mise trust`** — a fresh worktree's `mise.toml` files are untrusted; mise refuses to run until trusted (`mise trust <dir>` per service, in-container).
+  2. **Git worktree path mismatch (the big one).** `git worktree add` on the host writes `.git` → `gitdir: /Users/ashwin/code/rhythms/.git/worktrees/<n>` (host path). In-container the repo is at `/workspaces/rhythms`, so git fails: *"fatal: not a git repository."* **This is the real root of the silent wrong-code testing.** Fix: container must alias the host path → mount, e.g. `ln -s /workspaces/rhythms /Users/ashwin/code/rhythms` (belongs in devcontainer setup / postCreate — **infra, Plan 5 territory**). With the alias applied, the full spike passed (git + bundle + vitest all ✓).
+
+**Consequence:** dep-sharing (Tasks 2–3) is validated, but it is **gated on the git-path alias prerequisite**, which is a devcontainer-setup change bigger than Plan 3. Sequence: land the container path-alias (Plan 5 / devcontainer) → then Tasks 2–3 here. Also add `mise trust` + POETRY_CACHE_DIR (not .venv) to `rdev_share_deps`.
+
+---
+
+### Task 1 (SPIKE): verify symlink-sharing actually works per language in-container — DONE (see SPIKE RESULTS above)
 
 **Files:** none (investigation; record findings in the plan).
 
