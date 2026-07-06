@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# rlocal -- lease the single local dev server (one big lease, whole stack).
+# Coordinates which worktree "owns" the live app (ports 3000/4000/8000) for
+# e2e / lighthouse work. Per-worktree tests do NOT need the lease.
+#
+# Lease file: $RHYTHMS_DIR/.rdev/local-lease.json
+#   { "holder", "worktree", "claimed_at" (epoch), "pid", "user" }
+# Stale if the holder pid is dead, or (with --ttl) older than ttl seconds.
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+
+# Test hook: RDEV_LEASE_FILE bypasses config load.
+if [[ -z "${RDEV_LEASE_FILE:-}" ]]; then
+  rdev_load_config
+  RDEV_LEASE_FILE="$RHYTHMS_DIR/.rdev/local-lease.json"
+fi
+LEASE_FILE="$RDEV_LEASE_FILE"
+
+usage() {
+  cat <<EOF
+Usage: rlocal <command> [args]
+
+Commands:
+  status [--json]              Show the current lease holder (or "free").
+  holder                       Print just the holder name (empty if free).
+  claim <name> [--worktree P] [--ttl SEC]
+                               Claim the lease for <name>. Fails if held by
+                               someone else (unless their lease is stale).
+  release [<name>] [--force]   Release the lease (if held by <name>, or --force).
+  wait <name> [--worktree P] [--timeout SEC]
+                               Block until free, then claim.
+EOF
+  exit "${1:-0}"
+}
+
+_now() { date +%s; }
+_lease_read() { [[ -f "$LEASE_FILE" ]] && cat "$LEASE_FILE" || echo ""; }
+_field() { echo "$1" | jq -r "$2 // empty" 2>/dev/null || true; }
+
+# Is the current lease stale? Design: stay-claimed until explicit release;
+# ONLY --ttl makes a lease auto-stale (opt-in). No dead-pid heuristic — the pid
+# recorded is the ephemeral rlocal CLI's, not the long-lived holder's.
+_is_stale() {  # _is_stale <ttl-or-empty>
+  local ttl="$1"
+  [[ -z "$ttl" ]] && return 1
+  local j at; j="$(_lease_read)"; [[ -z "$j" ]] && return 0
+  at="$(_field "$j" .claimed_at)"
+  [[ -n "$at" ]] && (( $(_now) - at > ttl )) && return 0
+  return 1
+}
+
+_write_lease() {  # _write_lease <name> <worktree>
+  mkdir -p "$(dirname "$LEASE_FILE")"
+  local tmp="$LEASE_FILE.tmp.$$"
+  jq -n --arg h "$1" --arg w "$2" --argjson t "$(_now)" --argjson p "$$" --arg u "${USER:-unknown}" \
+    '{holder:$h, worktree:$w, claimed_at:$t, pid:$p, user:$u}' > "$tmp"
+  mv "$tmp" "$LEASE_FILE"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  -h|--help|"") usage 0 ;;
+
+  status)
+    j="$(_lease_read)"
+    if [[ -z "$j" ]]; then
+      [[ "${1:-}" == "--json" ]] && echo '{"status":"free"}' || echo "local server: FREE"
+    else
+      if [[ "${1:-}" == "--json" ]]; then echo "$j"
+      else
+        h="$(_field "$j" .holder)"; w="$(_field "$j" .worktree)"; at="$(_field "$j" .claimed_at)"
+        age=$(( $(_now) - ${at:-$(_now)} ))
+        echo "local server: held by '$h'"
+        echo "  worktree: $w"
+        echo "  claimed:  ${age}s ago"
+      fi
+    fi ;;
+
+  holder)
+    _field "$(_lease_read)" .holder ;;
+
+  claim)
+    name="${1:-}"; shift || true
+    [[ -z "$name" ]] && { echo "claim: name required" >&2; usage 1; }
+    worktree=""; ttl=""
+    while [[ $# -gt 0 ]]; do case "$1" in
+      --worktree) worktree="$2"; shift 2 ;;
+      --ttl) ttl="$2"; shift 2 ;;
+      *) echo "claim: bad flag $1" >&2; usage 1 ;;
+    esac; done
+    [[ -z "$worktree" ]] && worktree="${WORKTREE_DIR:-}/$name"
+    j="$(_lease_read)"
+    if [[ -n "$j" ]]; then
+      cur="$(_field "$j" .holder)"
+      if [[ "$cur" == "$name" ]]; then _write_lease "$name" "$worktree"; echo "lease refreshed for '$name'"; exit 0; fi
+      if _is_stale "$ttl"; then echo "taking stale lease from '$cur'"; else
+        echo "local server is held by '$cur' (worktree: $(_field "$j" .worktree))" >&2
+        echo "release it (rlocal release) or 'rlocal wait $name'." >&2
+        exit 1
+      fi
+    fi
+    _write_lease "$name" "$worktree"
+    echo "local server claimed by '$name'" ;;
+
+  release)
+    name="${1:-}"; force=""
+    [[ "$name" == "--force" ]] && { force=1; name=""; } || { [[ "${2:-}" == "--force" ]] && force=1; }
+    j="$(_lease_read)"
+    [[ -z "$j" ]] && { echo "local server already free"; exit 0; }
+    cur="$(_field "$j" .holder)"
+    if [[ -n "$force" || -z "$name" || "$cur" == "$name" ]]; then
+      rm -f "$LEASE_FILE"; echo "local server released (was '$cur')"
+    else
+      echo "lease held by '$cur', not '$name' (use --force to override)" >&2; exit 1
+    fi ;;
+
+  wait)
+    name="${1:-}"; shift || true
+    [[ -z "$name" ]] && { echo "wait: name required" >&2; usage 1; }
+    worktree=""; timeout=""
+    while [[ $# -gt 0 ]]; do case "$1" in
+      --worktree) worktree="$2"; shift 2 ;;
+      --timeout) timeout="$2"; shift 2 ;;
+      *) shift ;;
+    esac; done
+    [[ -z "$worktree" ]] && worktree="${WORKTREE_DIR:-}/$name"
+    start="$(_now)"
+    while :; do
+      if "$SCRIPT_DIR/rlocal" claim "$name" --worktree "$worktree" >/dev/null 2>&1; then
+        echo "local server claimed by '$name'"; exit 0
+      fi
+      [[ -n "$timeout" ]] && (( $(_now) - start > timeout )) && { echo "wait: timed out" >&2; exit 1; }
+      sleep 3
+    done ;;
+
+  *) echo "rlocal: unknown command '$cmd'" >&2; usage 1 ;;
+esac
