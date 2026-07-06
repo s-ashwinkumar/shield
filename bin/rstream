@@ -213,6 +213,14 @@ if [[ "$RESUMING" == "false" ]]; then
     fi
   fi
 
+  # --- Prepare container + share deps (worktree mode only; container-centric testing) ---
+  if [[ "$LOCAL" != "true" ]]; then
+    echo "Preparing container (git-path alias + mise trust)..."
+    rdev_container_prep "$WORK_DIR"
+    echo "Sharing dependencies from mainline..."
+    rdev_share_deps "$WORK_DIR"
+  fi
+
   # --- Initialize state ---
 
   if [[ ! -f "$STATE_FILE" ]]; then

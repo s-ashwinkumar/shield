@@ -101,6 +101,70 @@ rdev_coord_msg() {
   rdev-mux send-enter --pane "$pane"
 }
 
+# --- Herdr worktree / container helpers (container-centric testing) ---
+
+# The dev container that mounts the repo at /workspaces/rhythms.
+rdev_container() { echo "${DEVCONTAINER}-${DEVCONTAINER}-1"; }
+
+# Container path for a host worktree dir under $WORKTREE_DIR.
+rdev_container_path() { echo "/workspaces/rhythms/.claude/worktrees/$(basename "$1")"; }
+
+# Run a command inside the dev container at a container path.
+rdev_docker_exec() {  # rdev_docker_exec <container-cwd> <cmd...>
+  local cwd="$1"; shift
+  docker exec "$(rdev_container)" bash -lc "cd '$cwd' && $*"
+}
+
+# Make a host-created worktree usable in-container: (1) alias the host repo path
+# to the mount so git's worktree gitdir pointer resolves, (2) trust mise configs.
+# Idempotent. Safe: never touches the mount path itself.
+rdev_container_prep() {  # rdev_container_prep <host_worktree_dir>
+  local cpath; cpath="$(rdev_container_path "$1")"
+  local c; c="$(rdev_container)"
+  docker exec "$c" bash -lc "host='$RHYTHMS_DIR'
+    [ \"\$host\" = /workspaces/rhythms ] && exit 0
+    if [ ! -L \"\$host\" ]; then
+      rm -rf \"\$host\" 2>/dev/null || true
+      mkdir -p \"\$(dirname \"\$host\")\"
+      ln -s /workspaces/rhythms \"\$host\"
+    fi" 2>/dev/null || true
+  docker exec "$c" bash -lc \
+    "for d in '$cpath' '$cpath'/webui '$cpath'/railsapi '$cpath'/mlai '$cpath'/mcpservers; do mise trust \"\$d\" >/dev/null 2>&1 || true; done" 2>/dev/null || true
+}
+
+# True (0) if the worktree's copy of <rel_lockfile> differs from mainline's.
+rdev_lock_diverged() {  # rdev_lock_diverged <worktree_dir> <rel_lockfile>
+  local wt="$1" rel="$2"
+  [[ -f "$RHYTHMS_DIR/$rel" && -f "$wt/$rel" ]] || return 1
+  ! diff -q "$RHYTHMS_DIR/$rel" "$wt/$rel" >/dev/null 2>&1
+}
+
+# Share mainline deps into a worktree by symlink (all-Linux, in-container);
+# scoped reinstall in the worktree only when that service's lockfile diverges.
+rdev_share_deps() {  # rdev_share_deps <host_worktree_dir>
+  local wt="$1" cpath; cpath="$(rdev_container_path "$wt")"
+  local specs=(
+    "webui/node_modules:webui/package-lock.json:webui:npm ci"
+    "node_modules:package-lock.json:.:npm ci"
+    "railsapi/.cache/bundle:railsapi/Gemfile.lock:railsapi:bundle install"
+    "mlai/.cache/pypoetry:mlai/poetry.lock:mlai:poetry install"
+  )
+  local spec dep lock svc inst
+  for spec in "${specs[@]}"; do
+    IFS=: read -r dep lock svc inst <<<"$spec"
+    [[ -e "$RHYTHMS_DIR/$dep" ]] || { echo "  skip $dep (not in mainline)"; continue; }
+    [[ -e "$wt/$dep" ]] && { echo "  keep $dep (present)"; continue; }
+    if rdev_lock_diverged "$wt" "$lock"; then
+      echo "  $dep: lockfile diverged -> '$inst' in worktree"
+      rdev_docker_exec "$cpath/$svc" "mise x -- $inst" || echo "  WARN: $inst failed for $svc"
+    else
+      mkdir -p "$(dirname "$wt/$dep")"
+      ln -s "$RHYTHMS_DIR/$dep" "$wt/$dep"
+      echo "  $dep: symlinked from mainline"
+    fi
+  done
+}
+
 # --- Notifications ---
 
 rdev_notify() {
