@@ -49,6 +49,7 @@ assert_eq "pane-run" "herdr pane run p0 claude --agent coordinator" \
   "$(B pane-run --pane p0 --text 'claude --agent coordinator')"
 assert_eq "send-text" "herdr pane send-text p0 build it now" "$(B send-text --pane p0 --text 'build it now')"
 assert_eq "send-enter" "herdr pane send-keys p0 Enter" "$(B send-enter --pane p0)"
+assert_eq "send-key" "herdr pane send-keys p0 ctrl+c" "$(B send-key --pane p0 --key ctrl+c)"
 assert_eq "pane-rename" "herdr pane rename p0 USENG-1" "$(B pane-rename --pane p0 --name USENG-1)"
 assert_eq "tab-focus" "herdr tab focus wr:t1" "$(B tab-focus --tab wr:t1)"
 

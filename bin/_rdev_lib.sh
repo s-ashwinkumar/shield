@@ -165,6 +165,33 @@ rdev_share_deps() {  # rdev_share_deps <host_worktree_dir>
   done
 }
 
+# --- Live server (promote) helpers ---
+
+# The command that runs the app in-container with WORKSPACE_ROOT=<container path>.
+rdev_dev_cmd() {  # rdev_dev_cmd <container-workspace-path>
+  printf "docker exec -it %s bash -lc 'mise x -C %s -- dev'" "$(rdev_container)" "$1"
+}
+
+# Find-or-create the 'services' tab (runs the live app) in the project workspace;
+# echo its first pane id.
+rdev_services_pane() {
+  local ws tab
+  ws="$(rdev-mux space-ensure --name "$RDEV_WORKSPACE" --cwd "$RHYTHMS_DIR")"
+  tab="$(rdev-mux tab-find --name services --workspace "$ws")"
+  [[ -z "$tab" ]] && tab="$(rdev-mux tab-new --name services --cwd "$RHYTHMS_DIR" --workspace "$ws")"
+  rdev-mux pane-first --tab "$tab"
+}
+
+# (Re)start the live app in the services pane, pointed at a container WORKSPACE_ROOT.
+# Interrupts whatever dev is running there first (harmless if none).
+rdev_serve() {  # rdev_serve <container-workspace-path>
+  local pane; pane="$(rdev_services_pane)"
+  [[ -z "$pane" ]] && { echo "rdev_serve: no services pane" >&2; return 1; }
+  rdev-mux send-key --pane "$pane" --key ctrl+c >/dev/null 2>&1 || true
+  sleep 1
+  rdev-mux pane-run --pane "$pane" --text "$(rdev_dev_cmd "$1")"
+}
+
 # --- Notifications ---
 
 rdev_notify() {
