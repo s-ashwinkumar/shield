@@ -165,6 +165,17 @@ rdev_share_deps() {  # rdev_share_deps <host_worktree_dir>
   done
 }
 
+# --- Per-worktree DB isolation ---
+
+# Deterministic per-stream DB-name suffix (postgres-safe): "_<sanitized-lowercase>".
+# railsapi test db = habits_rob_test<suffix><TEST_ENV_NUMBER>; keeps parallel
+# integration test runs from different worktrees off each other's data.
+rdev_db_suffix() {  # rdev_db_suffix <name>
+  local s
+  s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '_' | sed 's/_*$//')"
+  printf '_%s' "$s"
+}
+
 # --- Live server (promote) helpers — agent-friendly, no pane, no user ---
 
 # (Re)start the live app in-container, pointed at a container WORKSPACE_ROOT.

@@ -168,6 +168,15 @@ if [[ "$RESUMING" == "false" ]]; then
       echo "Copied .local.env"
     fi
 
+    # Per-worktree DB isolation: give this stream its own test DB namespace so
+    # parallel integration test runs don't collide. mise sources .local.env, so
+    # RDEV_DB_SUFFIX is set for every command in this worktree (rspec reads it via
+    # database.yml). Idempotent — only add once.
+    if [[ -f "$WORK_DIR/.local.env" ]] && ! grep -q "RDEV_DB_SUFFIX" "$WORK_DIR/.local.env"; then
+      echo "export RDEV_DB_SUFFIX=$(rdev_db_suffix "$NAME")" >> "$WORK_DIR/.local.env"
+      echo "Set RDEV_DB_SUFFIX=$(rdev_db_suffix "$NAME") (per-worktree test DB)"
+    fi
+
     # Symlink docs/plans/ to main repo so plans survive worktree cleanup
     mkdir -p "$RHYTHMS_DIR/docs/plans"
     if [[ ! -e "$WORK_DIR/docs/plans" ]]; then
