@@ -176,6 +176,18 @@ rdev_db_suffix() {  # rdev_db_suffix <name>
   printf '_%s' "$s"
 }
 
+# Create + migrate a worktree's isolated mlai dev DB (parity with rails, whose
+# parallel:setup auto-creates its test DB). No-op on mainline (unset suffix).
+# Idempotent. Runs the in-container script under `mise x` so POSTGRES_* come from
+# the worktree's own .dev.env. See bin/_rdev_mlai_setup.sh for the why.
+rdev_mlai_setup() {  # rdev_mlai_setup <host_worktree_dir>
+  local wt="$1" cpath here
+  cpath="$(rdev_container_path "$wt")"
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  docker exec -i "$(rdev_container)" bash -lc "cd '$cpath/mlai' && exec mise x -- bash -s" \
+    < "$here/_rdev_mlai_setup.sh"
+}
+
 # --- Live server (promote) helpers — agent-friendly, no pane, no user ---
 
 # (Re)start the live app in-container, pointed at a container WORKSPACE_ROOT.

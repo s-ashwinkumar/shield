@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# rmlai -- set up a worktree's isolated mlai database (create + migrate).
+#
+# mlai tests reuse the dev DB (transaction rollback), so parallel worktrees would
+# otherwise share one DB and step on each other's schema/migrations. This gives
+# the current (or named) worktree its own suffixed mlai dev DB. Run it once per
+# worktree before mlai work / tests. Idempotent; no-op on mainline.
+#
+# Usage:
+#   rmlai [setup] [<stream>]   # <stream> defaults to the current directory
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+cmd="${1:-setup}"
+case "$cmd" in setup) shift || true ;; -h|--help) sed -n '2,12p' "$0"; exit 0 ;; *) : ;; esac
+
+if [[ -n "${1:-}" ]]; then
+  WT="${WORKTREE_DIR:-}/$1"
+else
+  WT="$PWD"
+fi
+[[ -d "$WT" ]] || { echo "rmlai: worktree not found: $WT" >&2; exit 1; }
+
+echo "mlai DB setup → $WT"
+rdev_mlai_setup "$WT"
