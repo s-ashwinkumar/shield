@@ -220,6 +220,21 @@ if [[ "$RESUMING" == "false" ]]; then
       cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
       echo "Copied rdev agents (skills come from ~/.claude/skills/rdev)"
     fi
+
+    # Pre-approve project .mcp.json servers for this stream. Worktree Claude
+    # sessions run non-interactively (the coordinator agent), so Claude can't
+    # answer the "approve these MCP servers?" prompt and instead auto-writes
+    # disabledMcpjsonServers for ALL of them -> the stream silently loses every
+    # project MCP. Set enableAllProjectMcpServers up front (matches mainline).
+    SL="$WORK_CLAUDE/settings.local.json"
+    if [[ -L "$SL" ]]; then cp -L "$SL" "$SL.deref" 2>/dev/null && mv "$SL.deref" "$SL"; fi  # edit a real file, not mainline's
+    SL_CUR='{}'; [[ -f "$SL" ]] && SL_CUR="$(cat "$SL" 2>/dev/null)"; [[ -n "$SL_CUR" ]] || SL_CUR='{}'
+    if echo "$SL_CUR" | jq '.enableAllProjectMcpServers = true | del(.disabledMcpjsonServers)' > "$SL.new" 2>/dev/null; then
+      mv "$SL.new" "$SL"
+    else
+      rm -f "$SL.new"; printf '{\n  "enableAllProjectMcpServers": true\n}\n' > "$SL"
+    fi
+    echo "Enabled project MCP servers for the stream (.claude/settings.local.json)"
   fi
 
   # --- Prepare container + share deps (worktree mode only; container-centric testing) ---
