@@ -47,11 +47,18 @@ if ! "$SCRIPT_DIR/rlocal" claim "$NAME" --worktree "$WORK_DIR"; then
   exit 1
 fi
 
+# Make the worktree bootable before serving it: container prep (git-path alias,
+# mise trust) + dep reconciliation (share matching deps, install diverged ones,
+# and give mlai its own poetry venv). Idempotent; keeps promote self-sufficient
+# so a service doesn't die on boot and take the whole app down with it.
+echo "Preparing worktree '$NAME' (container prep + deps)..."
+rdev_container_prep "$WORK_DIR"
+rdev_share_deps "$WORK_DIR"
+
 echo "Pointing live server at worktree '$NAME'..."
 rdev_serve "$(rdev_container_path "$WORK_DIR")"
 rdev_update_state "$NAME" promoted true
 echo ""
 echo "Promoted: the live server now runs dev with WORKSPACE_ROOT='$NAME'."
 echo "  Ports 3000/4000/8000 serve this worktree once it finishes booting (watch dev.log above)."
-echo "  If a service fails to boot, the worktree may need deps: rdev_share_deps / bundle install."
 echo "  Return to main + release the lease with: runpromote $NAME"

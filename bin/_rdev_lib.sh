@@ -139,30 +139,58 @@ rdev_lock_diverged() {  # rdev_lock_diverged <worktree_dir> <rel_lockfile>
   ! diff -q "$RHYTHMS_DIR/$rel" "$wt/$rel" >/dev/null 2>&1
 }
 
-# Share mainline deps into a worktree by symlink (all-Linux, in-container);
-# scoped reinstall in the worktree only when that service's lockfile diverges.
+# Share mainline deps into a worktree by symlink (all-Linux, in-container) when the
+# lockfile matches; reinstall in the worktree when it diverges. mlai's poetry venv
+# is special-cased below — it can NEVER be symlink-shared.
 rdev_share_deps() {  # rdev_share_deps <host_worktree_dir>
   local wt="$1" cpath; cpath="$(rdev_container_path "$wt")"
+  # dep dir : lockfile : service subdir : install cmd
   local specs=(
     "webui/node_modules:webui/package-lock.json:webui:npm ci"
     "node_modules:package-lock.json:.:npm ci"
     "railsapi/.cache/bundle:railsapi/Gemfile.lock:railsapi:bundle install"
-    "mlai/.cache/pypoetry:mlai/poetry.lock:mlai:poetry install"
   )
   local spec dep lock svc inst
   for spec in "${specs[@]}"; do
     IFS=: read -r dep lock svc inst <<<"$spec"
     [[ -e "$RHYTHMS_DIR/$dep" ]] || { echo "  skip $dep (not in mainline)"; continue; }
-    [[ -e "$wt/$dep" ]] && { echo "  keep $dep (present)"; continue; }
     if rdev_lock_diverged "$wt" "$lock"; then
-      echo "  $dep: lockfile diverged -> '$inst' in worktree"
-      rdev_docker_exec "$cpath/$svc" "mise x -- $inst" || echo "  WARN: $inst failed for $svc"
+      # worktree's lock differs from mainline -> it needs its OWN deps. Drop any
+      # stale mainline symlink first (else the divergent worktree runs main's deps).
+      [[ -L "$wt/$dep" ]] && rm -f "$wt/$dep"
+      if [[ -e "$wt/$dep" ]]; then
+        echo "  $dep: own install present (lock diverged)"
+      else
+        echo "  $dep: lock diverged -> '$inst' in worktree"
+        rdev_docker_exec "$cpath/$svc" "mise x -- $inst" || echo "  WARN: $inst failed for $svc"
+      fi
+    elif [[ -e "$wt/$dep" ]]; then
+      echo "  keep $dep (present, lock matches)"
     else
       mkdir -p "$(dirname "$wt/$dep")"
       ln -s "$RHYTHMS_DIR/$dep" "$wt/$dep"
       echo "  $dep: symlinked from mainline"
     fi
   done
+
+  # mlai: NEVER symlink the poetry cache/venv. poetry's virtualenvs.path is
+  # $POETRY_CACHE_DIR/virtualenvs (= mlai/.cache/pypoetry/virtualenvs) with
+  # in-project OFF, so a symlinked .cache/pypoetry points the worktree's venv path
+  # at mainline's EXISTING venv -> poetry dies recreating it ([Errno 17] File
+  # exists) -> mlai exits -> hivemind tears down the whole app. Give the worktree
+  # its own cache + venv instead (its own poetry install).
+  if [[ -d "$RHYTHMS_DIR/mlai" ]]; then
+    if [[ -L "$wt/mlai/.cache/pypoetry" ]]; then
+      rm -f "$wt/mlai/.cache/pypoetry"
+      echo "  mlai/.cache/pypoetry: removed shared symlink (poetry venv can't be shared)"
+    fi
+    if [[ -d "$wt/mlai/.cache/pypoetry/virtualenvs" ]] && [[ -n "$(ls -A "$wt/mlai/.cache/pypoetry/virtualenvs" 2>/dev/null)" ]]; then
+      echo "  mlai: own poetry venv present"
+    else
+      echo "  mlai: building own poetry venv (poetry install)..."
+      rdev_docker_exec "$cpath/mlai" "mise x -- poetry install" || echo "  WARN: mlai poetry install failed"
+    fi
+  fi
 }
 
 # --- Per-worktree DB isolation ---
