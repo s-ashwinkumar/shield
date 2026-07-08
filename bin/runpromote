@@ -36,4 +36,4 @@ rdev_serve /workspaces/rhythms
 "$SCRIPT_DIR/rlocal" release "$NAME" || true
 rdev_update_state "$NAME" promoted false
 echo ""
-echo "Unpromoted: the 'services' tab is back on main; lease released."
+echo "Unpromoted: the live server is back on main (WORKSPACE_ROOT=/workspaces/rhythms); lease released."

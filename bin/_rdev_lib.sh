@@ -195,9 +195,18 @@ rdev_mlai_setup() {  # rdev_mlai_setup <host_worktree_dir>
 # survives the docker-exec session; logs to <workspace>/dev.log. Documented flow:
 # start with `dev`/`devd`, watch `tail -f dev.log`, stop with `pkill -f hivemind`.
 rdev_serve() {  # rdev_serve <container-workspace-path>
-  docker exec "$(rdev_container)" bash -lc \
-    "pkill -f hivemind 2>/dev/null || true; sleep 1; cd '$1' && nohup dev > dev.log 2>&1 & disown 2>/dev/null || true; sleep 1"
-  echo "  live server → $1 (backgrounded; 'docker exec $(rdev_container) tail -f $1/dev.log' to watch)"
+  local c; c="$(rdev_container)"
+  # 1. Stop the current server; WAIT for the hivemind procs (port holders) to
+  #    actually exit before restarting, else the new dev hits ports-in-use.
+  docker exec "$c" bash -lc \
+    'pkill -f hivemind 2>/dev/null || true; for i in $(seq 1 20); do pgrep -f hivemind >/dev/null || break; sleep 0.5; done'
+  # 2. Start DETACHED (docker exec -d): a plain `&` background job is reaped when
+  #    the exec session ends, so nohup/disown are not enough — -d is.
+  # 3. Select the code with WORKSPACE_ROOT, NOT cwd: dev.Procfile runs
+  #    `mise x -C $WORKSPACE_ROOT/<svc>`, and dev's Procfile path is fixed to
+  #    mainline, so cd does nothing — the env var is what repoints the app.
+  docker exec -d "$c" bash -lc "cd '$1' && WORKSPACE_ROOT='$1' exec dev > '$1/dev.log' 2>&1"
+  echo "  live server → WORKSPACE_ROOT=$1 (detached; watch: docker exec $c tail -f $1/dev.log)"
 }
 
 # --- Notifications ---
