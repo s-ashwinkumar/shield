@@ -27,11 +27,6 @@ herdr workspace focus "$WS_ID" >/dev/null 2>&1 || true
 echo "Herdr workspace '$WS_NAME' ready ($WS_ID)."
 echo "Open streams inside it:  rstream <ticket>"
 
-# Start the live app in a 'services' tab if one doesn't exist yet (main WORKSPACE_ROOT).
-# rpromote/runpromote later repoint this same tab at a worktree.
-if [[ -z "$(rdev-mux tab-find --name services --workspace "$WS_ID")" ]]; then
-  echo "Starting services (dev, main) in a 'services' tab..."
-  rdev_serve /workspaces/rhythms
-else
-  echo "Services tab already present (leaving it as-is)."
-fi
+# The live app is NOT auto-started (avoids disrupting a server that's already up).
+# Start main in the container with `devd`, or point the live server at a worktree
+# with `rpromote <ticket>` (which restarts dev via docker exec, backgrounded).

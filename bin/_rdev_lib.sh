@@ -165,31 +165,16 @@ rdev_share_deps() {  # rdev_share_deps <host_worktree_dir>
   done
 }
 
-# --- Live server (promote) helpers ---
+# --- Live server (promote) helpers — agent-friendly, no pane, no user ---
 
-# The command that runs the app in-container with WORKSPACE_ROOT=<container path>.
-rdev_dev_cmd() {  # rdev_dev_cmd <container-workspace-path>
-  printf "docker exec -it %s bash -lc 'mise x -C %s -- dev'" "$(rdev_container)" "$1"
-}
-
-# Find-or-create the 'services' tab (runs the live app) in the project workspace;
-# echo its first pane id.
-rdev_services_pane() {
-  local ws tab
-  ws="$(rdev-mux space-ensure --name "$RDEV_WORKSPACE" --cwd "$RHYTHMS_DIR")"
-  tab="$(rdev-mux tab-find --name services --workspace "$ws")"
-  [[ -z "$tab" ]] && tab="$(rdev-mux tab-new --name services --cwd "$RHYTHMS_DIR" --workspace "$ws")"
-  rdev-mux pane-first --tab "$tab"
-}
-
-# (Re)start the live app in the services pane, pointed at a container WORKSPACE_ROOT.
-# Interrupts whatever dev is running there first (harmless if none).
+# (Re)start the live app in-container, pointed at a container WORKSPACE_ROOT.
+# Stops the current dev (pkill -f hivemind), then starts `dev` backgrounded so it
+# survives the docker-exec session; logs to <workspace>/dev.log. Documented flow:
+# start with `dev`/`devd`, watch `tail -f dev.log`, stop with `pkill -f hivemind`.
 rdev_serve() {  # rdev_serve <container-workspace-path>
-  local pane; pane="$(rdev_services_pane)"
-  [[ -z "$pane" ]] && { echo "rdev_serve: no services pane" >&2; return 1; }
-  rdev-mux send-key --pane "$pane" --key ctrl+c >/dev/null 2>&1 || true
-  sleep 1
-  rdev-mux pane-run --pane "$pane" --text "$(rdev_dev_cmd "$1")"
+  docker exec "$(rdev_container)" bash -lc \
+    "pkill -f hivemind 2>/dev/null || true; sleep 1; cd '$1' && nohup dev > dev.log 2>&1 & disown 2>/dev/null || true; sleep 1"
+  echo "  live server → $1 (backgrounded; 'docker exec $(rdev_container) tail -f $1/dev.log' to watch)"
 }
 
 # --- Notifications ---
