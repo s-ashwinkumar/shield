@@ -184,11 +184,20 @@ rdev_share_deps() {  # rdev_share_deps <host_worktree_dir>
       rm -f "$wt/mlai/.cache/pypoetry"
       echo "  mlai/.cache/pypoetry: removed shared symlink (poetry venv can't be shared)"
     fi
-    if [[ -d "$wt/mlai/.cache/pypoetry/virtualenvs" ]] && [[ -n "$(ls -A "$wt/mlai/.cache/pypoetry/virtualenvs" 2>/dev/null)" ]]; then
+    # --no-root: mlai runs from src/ via PYTHONPATH, so the root "rhythms" package
+    # is NOT installed (plain `poetry install` dies with "No file/folder found for
+    # package rhythms", leaving an incomplete venv — then each mlai sub-process
+    # races to create it at boot and hits [Errno 17]). Marker file records that
+    # the venv is complete, so we don't reuse a half-built one.
+    if [[ -f "$wt/mlai/.cache/pypoetry/.rdev-venv-ready" ]]; then
       echo "  mlai: own poetry venv present"
     else
-      echo "  mlai: building own poetry venv (poetry install)..."
-      rdev_docker_exec "$cpath/mlai" "mise x -- poetry install" || echo "  WARN: mlai poetry install failed"
+      echo "  mlai: building own poetry venv (poetry install --no-root)..."
+      if rdev_docker_exec "$cpath/mlai" "mise x -- poetry install --no-root"; then
+        touch "$wt/mlai/.cache/pypoetry/.rdev-venv-ready"
+      else
+        echo "  WARN: mlai poetry install failed"
+      fi
     fi
   fi
 }
