@@ -25,4 +25,17 @@ echo '{"holder":"ghost","worktree":"/w/g","claimed_at":1,"pid":999999,"user":"x"
 "$BIN" claim USENG-3 --worktree /w/3 --ttl 5 >/dev/null 2>&1; ok "ttl: stale takeover rc" 0 $?
 ok "holder after takeover" "USENG-3" "$("$BIN" holder)"
 
+# --- FIFO queue fairness ---
+rm -f "$RDEV_LEASE_FILE" "${RDEV_LEASE_FILE%.json}-queue.json"
+"$BIN" claim A --worktree /w/a >/dev/null 2>&1
+"$BIN" wait B --worktree /w/b --once >/dev/null 2>&1; ok "B queues while A holds" 3 $?
+"$BIN" wait C --worktree /w/c --once >/dev/null 2>&1; ok "C queues behind B" 3 $?
+ok "FIFO head is B" "B" "$("$BIN" queue | awk '/1\./{print $2}')"
+"$BIN" release A >/dev/null 2>&1
+"$BIN" wait C --worktree /w/c --once >/dev/null 2>&1; ok "C can't jump B" 3 $?
+"$BIN" wait B --worktree /w/b --once >/dev/null 2>&1; ok "B (head) claims when free" 0 $?
+ok "holder now B" "B" "$("$BIN" holder)"
+"$BIN" release B >/dev/null 2>&1
+"$BIN" wait C --worktree /w/c --once >/dev/null 2>&1; ok "C claims after B releases" 0 $?
+
 echo "P=$P F=$F"; [[ $F -eq 0 ]]

@@ -17,6 +17,8 @@ if [[ -z "${RDEV_LEASE_FILE:-}" ]]; then
   RDEV_LEASE_FILE="$RHYTHMS_DIR/.rdev/local-lease.json"
 fi
 LEASE_FILE="$RDEV_LEASE_FILE"
+QUEUE_FILE="${RDEV_QUEUE_FILE:-${LEASE_FILE%.json}-queue.json}"
+QUEUE_STALE_SECS="${RDEV_QUEUE_STALE_SECS:-90}"   # a waiter silent this long is dead → pruned
 
 usage() {
   cat <<EOF
@@ -57,6 +59,24 @@ _write_lease() {  # _write_lease <name> <worktree>
   jq -n --arg h "$1" --arg w "$2" --argjson t "$(_now)" --argjson p "$$" --arg u "${USER:-unknown}" \
     '{holder:$h, worktree:$w, claimed_at:$t, pid:$p, user:$u}' > "$tmp"
   mv "$tmp" "$LEASE_FILE"
+}
+
+# --- FIFO queue helpers (fair; heartbeat-pruned so a dead waiter can't block) ---
+_queue_read() { [[ -f "$QUEUE_FILE" ]] && cat "$QUEUE_FILE" || echo "[]"; }
+_queue_write() { mkdir -p "$(dirname "$QUEUE_FILE")"; local t="$QUEUE_FILE.tmp.$$"; cat > "$t"; mv "$t" "$QUEUE_FILE"; }
+# Drop stale entries, upsert <name> with fresh heartbeat, return the queue.
+_queue_touch() {  # _queue_touch <name> <worktree>
+  local now; now="$(_now)"
+  _queue_read | jq --arg n "$1" --arg w "$2" --argjson now "$now" --argjson stale "$QUEUE_STALE_SECS" '
+    map(select($now - .seen <= $stale))                       # prune dead waiters
+    | (map(.name) | index($n)) as $i
+    | if $i == null then . + [{name:$n, worktree:$w, since:$now, seen:$now}]
+      else (.[$i].seen = $now) end
+  ' | tee >(_queue_write)
+}
+_queue_head() { _queue_read | jq -r 'sort_by(.since) | (.[0].name // empty)'; }
+_queue_remove() {  # _queue_remove <name>
+  _queue_read | jq --arg n "$1" 'map(select(.name != $n))' | _queue_write
 }
 
 cmd="${1:-}"; shift || true
@@ -119,21 +139,33 @@ case "$cmd" in
   wait)
     name="${1:-}"; shift || true
     [[ -z "$name" ]] && { echo "wait: name required" >&2; usage 1; }
-    worktree=""; timeout=""
+    worktree=""; timeout=""; once=""
     while [[ $# -gt 0 ]]; do case "$1" in
       --worktree) worktree="$2"; shift 2 ;;
       --timeout) timeout="$2"; shift 2 ;;
+      --once) once=1; shift ;;
       *) shift ;;
     esac; done
     [[ -z "$worktree" ]] && worktree="${WORKTREE_DIR:-}/$name"
     start="$(_now)"
     while :; do
-      if "$SCRIPT_DIR/rlocal" claim "$name" --worktree "$worktree" >/dev/null 2>&1; then
+      _queue_touch "$name" "$worktree" >/dev/null    # register + heartbeat + prune dead waiters
+      # FIFO: only the head may take a free lease → no starvation
+      if [[ "$(_queue_head)" == "$name" ]] && [[ -z "$(_lease_read)" ]]; then
+        _write_lease "$name" "$worktree"; _queue_remove "$name"
         echo "local server claimed by '$name'"; exit 0
       fi
-      [[ -n "$timeout" ]] && (( $(_now) - start > timeout )) && { echo "wait: timed out" >&2; exit 1; }
+      [[ -n "$once" ]] && { echo "queued '$name' (position: $(_queue_read | jq -r --arg n "$name" 'sort_by(.since)|(map(.name)|index($n))+1'))"; exit 3; }
+      [[ -n "$timeout" ]] && (( $(_now) - start > timeout )) && { _queue_remove "$name"; echo "wait: timed out" >&2; exit 1; }
       sleep 3
     done ;;
+
+  queue)
+    j="$(_queue_read)"; qn="$(echo "$j" | jq 'length')"
+    if [[ "$qn" == "0" ]]; then echo "queue: empty"
+    else echo "queue ($qn waiting):"; echo "$j" | jq -r --argjson now "$(_now)" \
+      'sort_by(.since) | to_entries[] | "  \(.key+1). \(.value.name)  (\($now - .value.since)s)"'
+    fi ;;
 
   *) echo "rlocal: unknown command '$cmd'" >&2; usage 1 ;;
 esac
