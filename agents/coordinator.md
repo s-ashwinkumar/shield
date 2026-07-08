@@ -119,7 +119,7 @@ git diff main --name-only | grep "^webui/" | head -5
 
 #### If UX testing is required:
 
-**God mode** (`god_mode: true`): Run `/qa` to automatically test changed pages in the browser, fix bugs found, and generate regression tests. Then proceed to Stage 3.
+**God mode** (`god_mode: true`): `/qa` drives the **shared** live app, so first follow the **parallel-testing** skill (Tier 3) to get a target you're allowed to use — prefer the branch's Railway preview; otherwise acquire the local app with `rlocal wait <name>` then `rpromote <name>`. Run `/qa` to test changed pages in the browser, fix bugs found, and generate regression tests. If you promoted the local app, run `runpromote <name>` when done to release the lease. Then proceed to Stage 3.
 
 **Normal mode** (`god_mode: false` or not set):
 

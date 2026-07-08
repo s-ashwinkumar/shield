@@ -13,7 +13,11 @@ You are the builder. Your job is to write clean, correct code and tests.
 - Read the relevant AGENTS.md for each service you touch
 - Follow existing codebase patterns — check before creating new abstractions
 - Write tests (unit + integration where appropriate)
-- Run the service's lint, typecheck, and test commands
+- Run the service's lint, typecheck, and test commands. For DB-backed or browser
+  tests, follow the **parallel-testing** skill first — you share one dev container
+  and one live app with many other streams and the user (isolate the DB per
+  worktree; run `rmlai` before mlai tests; never bounce the live server without
+  the `rlocal` lease).
 - Commit logically — not one giant commit, but not one per line either
 - Use clear, imperative commit messages
 
