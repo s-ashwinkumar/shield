@@ -5,10 +5,10 @@ description: How to test a change without colliding with the many other agents a
 
 ## Parallel testing — coexistence rules
 
-Many streams run at once (10+), plus the user, all sharing **one dev container**
-and **one local running app** (ports 3000/4000/8000). Tests must not step on each
-other or on the user. Pick the **lowest tier that proves your change** — lower
-tiers are cheaper and have no contention.
+Many streams run at once (10+), plus the user, all sharing **one dev container**.
+Local tests must not step on each other; the running app is QA'd on **per-PR
+Railway previews**, not a shared local server. Pick the **lowest tier that proves
+your change** — lower tiers are cheaper and have no contention.
 
 Actual test/lint/typecheck commands live in each touched service's `AGENTS.md`
 (webui / railsapi / mlai / mcpservers). This skill only covers the *coordination*
@@ -38,31 +38,27 @@ at mainline's database.
 - If `RDEV_DB_SUFFIX` is empty you're on mainline — do NOT run destructive DB prep
   there; you'd be resetting the shared dev database.
 
-### Tier 3 — The single live app (browser / e2e / lighthouse / manual QA)
+### Tier 3 — Running app / browser / e2e / lighthouse / UX QA
 
-Only **one** worktree can own the running app at a time (it's one server on fixed
-ports). This is the only tier that needs a lease.
+QA the running app on its **Railway preview**, not a local server. Opening a
+**draft PR** auto-creates a per-PR Railway environment — isolated, real, zero
+local contention (no shared server, no lease). Derive the URL straight from the
+PR number, no lookup needed:
 
-**Prefer a Railway preview deploy** for e2e / browser QA when the branch/PR has one
-— it's a real, isolated environment with zero local contention. Use the local app
-only when a preview isn't available or you need the un-pushed working tree.
+- webui: `https://webui-rhythms-pr-<PR>.up.railway.app/`
 
-To use the local app, coordinate via the lease (fair FIFO queue — no starvation):
+To QA a UI change:
+1. Ensure a **draft PR** is open for the branch (open one if needed) — that
+   triggers the Railway build.
+2. Wait for the preview to finish deploying (a few minutes after the push).
+3. Point `/qa` / the browser at `https://webui-rhythms-pr-<PR>.up.railway.app/`.
 
-1. `rlocal status` — see who holds it (could be another stream, or the user).
-2. `rlocal wait <stream>` — queues you and blocks until it's your turn, then claims
-   the lease for you. (If it's already free, `rpromote` alone will claim it.)
-3. `rpromote <stream>` — repoints the live app at your worktree (restarts `dev`;
-   self-reclaims the lease). Watch `dev.log` for startup; then test against
-   `localhost:3000/4000/8000`.
-4. `runpromote <stream>` — **always** run this when done: returns the app to main
-   and releases the lease so the next queued stream (or the user) can go.
-
-Rules: never bounce the live server without holding the lease (you'd yank it out
-from under the user or another agent); never skip `runpromote` (others are waiting).
+There is **no local live-server promote** here — `rpromote`/`runpromote`/`rlocal`
+are parked. Fast local multi-port app servers may return later; until then,
+Railway is the QA path.
 
 ### Quick decision
 
-- Change is logic/back-end only → Tier 1/2, done. No live server, no user needed.
-- Change touches `webui/` UI → Tier 1/2 first, then Tier 3 (prefer Railway preview;
-  else lease → `rpromote` → verify → `runpromote`).
+- Change is logic / back-end only → Tier 1/2 locally, done. No app, no QA env needed.
+- Change touches `webui/` UI → Tier 1/2 locally first, then Tier 3: open a draft PR
+  and QA on `https://webui-rhythms-pr-<PR>.up.railway.app/`.

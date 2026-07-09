@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# ⚠️ PARKED (2026-07-08): QA moved to Railway previews (see skills/parallel-testing.md).
+#    This local live-server promote is out of the active flow, pending fast local
+#    multi-port app servers. Kept for revival; not referenced by the pipeline.
 # rpromote -- point the single live server at a stream's worktree (herdr stack).
 # Claims the local-server lease, then (re)starts `dev` detached in-container (via
 # docker exec -d) with WORKSPACE_ROOT = the worktree. dev.Procfile launches each

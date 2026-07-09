@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# ⚠️ PARKED (2026-07-08): QA moved to Railway previews (see skills/parallel-testing.md).
+#    The single-local-server lease is unused (no shared local server to coordinate),
+#    pending fast local multi-port app servers. Kept for revival.
 # rlocal -- lease the single local dev server (one big lease, whole stack).
 # Coordinates which worktree "owns" the live app (ports 3000/4000/8000) for
 # e2e / lighthouse work. Per-worktree tests do NOT need the lease.

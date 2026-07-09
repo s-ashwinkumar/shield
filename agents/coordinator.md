@@ -119,17 +119,20 @@ git diff main --name-only | grep "^webui/" | head -5
 
 #### If UX testing is required:
 
-**God mode** (`god_mode: true`): `/qa` drives the **shared** live app, so first follow the **parallel-testing** skill (Tier 3) to get a target you're allowed to use — prefer the branch's Railway preview; otherwise acquire the local app with `rlocal wait <name>` then `rpromote <name>`. Run `/qa` to test changed pages in the browser, fix bugs found, and generate regression tests. If you promoted the local app, run `runpromote <name>` when done to release the lease. Then proceed to Stage 3.
+QA runs on the branch's **Railway preview**, not a local server (see the **parallel-testing** skill, Tier 3). A **draft PR** auto-creates the preview; the URL is `https://webui-rhythms-pr-<PR>.up.railway.app/` (derive `<PR>` from the PR number).
+
+**God mode** (`god_mode: true`): Ensure a **draft PR** is open for this branch (open one with `gh pr create --draft ...` if not — this triggers the Railway build; save the PR number to state). Wait for the preview to deploy (a few minutes), then run `/qa` against `https://webui-rhythms-pr-<PR>.up.railway.app/` to test changed pages, fix bugs found, and generate regression tests. Then proceed to Stage 3.
 
 **Normal mode** (`god_mode: false` or not set):
 
 ⛔ **HARD STOP — DO NOT PROCEED TO STAGE 3.**
 
-1. Notify: `terminal-notifier -title "rdev" -message "Build done: <ticket-id>. Run rpromote to test." -sound default -group rdev`
-2. Tell the user: "Build complete. UI changes detected — you need to test before I can continue. Run `rpromote <name>` to test on your running services, then tell me when you're done."
-3. **Wait for the user to respond.** Do not take any action until the user says something.
-4. If the user says "looks good" / "move forward" / "continue" → proceed to Stage 3.
-5. If the user reports issues → spawn the builder to fix them → ask again.
+1. Ensure a **draft PR** is open (open with `gh pr create --draft ...` if needed; save the PR number to state) so the Railway preview builds.
+2. Notify: `terminal-notifier -title "rdev" -message "Build done: <ticket-id>. QA on the Railway preview." -sound default -group rdev`
+3. Tell the user: "Build complete. UI changes detected — please QA before I continue. Test on the Railway preview: `https://webui-rhythms-pr-<PR>.up.railway.app/` (give it a few minutes to deploy), then tell me when you're done."
+4. **Wait for the user to respond.** Do not take any action until the user says something.
+5. If the user says "looks good" / "move forward" / "continue" → proceed to Stage 3.
+6. If the user reports issues → spawn the builder to fix them → ask again.
 
 #### If backend only (no webui files changed):
 - Tell the user: "No UI changes detected — skipping UX review, moving to code review."

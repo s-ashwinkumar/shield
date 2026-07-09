@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# ⚠️ PARKED (2026-07-08): QA moved to Railway previews (see skills/parallel-testing.md).
+#    Out of the active flow, pending fast local multi-port app servers. Kept for revival.
 # runpromote -- return the live server to main and release the lease (herdr stack).
 # Reverses rpromote: restarts `dev` with WORKSPACE_ROOT=main, releases the
 # local-server lease. Worktrees never move. (tmux version: rtunpromote)
