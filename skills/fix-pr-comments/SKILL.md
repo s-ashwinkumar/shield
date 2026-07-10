@@ -29,6 +29,8 @@ Then use the GitHub MCP to fetch:
 
 **Be conservative.** This code has already been built, tested, and reviewed. Any change you make now risks introducing regressions.
 
+Apply the `receiving-code-review` discipline (available in the rhythms repo's `.agents/skills/`): verify every comment against the actual code before acting, no performative agreement, push back with reasons when a reviewer is wrong.
+
 First, separate comments by source:
 
 ### Bot comments (cursor[bot], claude[bot], sonarcloud, etc.)
