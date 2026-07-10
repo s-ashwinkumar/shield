@@ -33,9 +33,13 @@ Before touching the browser, read these sources **in order** to understand what 
 
 ### Phase 0.5: Browser Mechanism & Tab Discipline
 
-Use the **chrome-devtools MCP tools** (attached to the shared QA Chrome). Do NOT use the playwright MCP for QA.
+Pick the browser mechanism in this order:
 
-1. Run `rqa-browser` (Bash) first — it ensures the dedicated QA Chrome is running on :9222 with the persistent profile `~/.rdev/qa-chrome`. Idempotent.
+1. **chrome-devtools MCP tools** (preferred) — attached to the shared QA Chrome. Run `rqa-browser` (Bash) first: it ensures the dedicated QA Chrome is running on :9222 with the persistent profile `~/.rdev/qa-chrome` (idempotent). If `rqa-browser` or Chrome itself is missing, say so and fall through.
+2. **playwright MCP tools** (fallback) — if chrome-devtools tools aren't available in this session. Expect a possible login wall (playwright may launch without the shared profile); handle it per Phase 1.
+3. **Neither available** — don't fake it: hand the user the QA test plan as a checklist, ask them to walk it in their browser and report results, and note in the QA round record that a human executed it. Suggest registering chrome-devtools MCP (`claude mcp add -s user chrome-devtools -- npx -y chrome-devtools-mcp@latest --browserUrl http://127.0.0.1:9222 --experimentalPageIdRouting`).
+
+When on chrome-devtools (option 1):
 2. **The browser is SHARED across parallel streams.** Tab discipline is mandatory:
    - Open a **new tab** for this ticket's QA (first navigation = your tab). Open more tabs for this ticket if needed.
    - Operate ONLY in tabs you opened this session. Never touch, close, or navigate other tabs.
