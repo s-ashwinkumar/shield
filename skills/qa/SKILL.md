@@ -33,10 +33,11 @@ Before touching the browser, read these sources **in order** to understand what 
 
 ### Phase 1: Auth Check
 
-Navigate to the app URL (default: http://localhost:3000).
+Navigate to the app URL. **Default: the branch's Railway preview** — `https://webui-rhythms-pr-<PR>.up.railway.app/` (get `<PR>` from `gh pr view --json number -q .number`; the draft PR should already exist per the workflow). Use `http://localhost:3000` only if the user explicitly asked for local QA.
 
-- If the app isn't running (connection refused), tell the user: "App not running on localhost:3000. Start it first." and stop.
-- If you land on a login page or get redirected to auth, **ask the user**: "I need to be logged in to test. Please log in manually in the browser window, then tell me when you're done." Wait for confirmation before continuing.
+- If the preview isn't up yet (build in progress), wait a few minutes and retry before reporting.
+- If redirected to login: click through Google OAuth — the browser runs with a persistent profile (`~/.rdev/browser-profile`) that stays logged into Google, so the flow should complete without credentials (click the account if an account-chooser appears).
+- Only if Google itself asks for credentials (profile session expired), **ask the user**: "The browser profile's Google session has expired — please log in once in the browser window; future runs won't need this." Wait for confirmation.
 - Take a snapshot to confirm you're on an authenticated page.
 
 ### Phase 2: Execute Test Plan

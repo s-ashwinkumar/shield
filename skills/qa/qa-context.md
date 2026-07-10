@@ -1,9 +1,10 @@
 # QA Context — Rhythms
 
 ## Auth
-- App URL: http://localhost:3000
+- App URL: the branch's Railway preview `https://webui-rhythms-pr-<PR>.up.railway.app/` (localhost:3000 only when the user explicitly asks for local QA)
 - Login: Google OAuth at /login
-- If not logged in (redirected to login page), ASK THE USER to log in manually in the browser, then continue
+- The QA browser uses a persistent profile (`~/.rdev/browser-profile`) that stays signed into Google — OAuth auto-completes; click the account in the chooser if one appears
+- Only ask the user to log in if Google itself demands credentials (profile session expired); that's a one-time fix
 
 ## Navigation
 - Left sidebar: Dashboards, Check-ins, OKRs, People, Settings
