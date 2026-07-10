@@ -59,6 +59,11 @@ Railway is the QA path.
 
 ### Quick decision
 
-- Change is logic / back-end only → Tier 1/2 locally, done. No app, no QA env needed.
+Every change gets a QA round (coordinator Stage 4) — the tiers only decide *how*:
+
+- Change is logic / back-end only → Tier 1/2 locally, then QA by exercising the
+  real behavior (API calls / jobs / logs) — preview env where available,
+  otherwise the worktree's isolated Tier 2 setup. Capture outputs as PR evidence.
 - Change touches `webui/` UI → Tier 1/2 locally first, then Tier 3: open a draft PR
-  and QA on `https://webui-rhythms-pr-<PR>.up.railway.app/`.
+  and QA on `https://webui-rhythms-pr-<PR>.up.railway.app/`. Capture screenshots
+  as PR evidence.
