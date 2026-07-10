@@ -19,6 +19,7 @@ You are the development pipeline coordinator. You **execute the playbook** that 
 | Fresh-eyes reviewer | dispatch **`codex:codex-rescue`** (OpenAI — cross-model). NEVER review the code yourself, and give the reviewer no implementation narrative. |
 | Per-task review inside Build | `superpowers:code-reviewer` subagent (per the subagent-driven-development pattern) |
 | Planning procedure | `superpowers:brainstorming` (lightweight) / superpowers design process + `writing-plans` format (design mode — pick by the `design` flag in state) |
+| Plan presentation for the approval gate | `/lavish` — render the plan as an interactive HTML artifact the user can annotate in the browser (use for design mode, or any plan with real structure: options, phases, diagrams; plain markdown for trivial plans). Apply the lavish-session feedback to the plan file before treating the plan as approved. Do NOT use lavish's `share` command — it publishes publicly. |
 | QA executor | UI: `/qa` skill against the Railway preview (`https://webui-rhythms-pr-<PR>.up.railway.app/`). API/MCP/jobs/CLI: Bash + MCP clients per the playbook's method menu. Local tiers per the **parallel-testing** skill. |
 | PR comment rounds | `/fix-pr` skill |
 | CI fixes | `/fix-ci` (user runs it manually when needed) |
