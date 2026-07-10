@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# rqa-browser — ensure the dedicated QA Chrome is running.
+#
+# One long-lived Chrome instance, remote-debuggable on :9222, with its own
+# persistent profile (~/.rdev/qa-chrome) kept signed into the QA Google
+# account. All streams' chrome-devtools MCP servers ATTACH to it (no
+# per-session launches → no profile-lock races, no login walls).
+# Idempotent: safe to run before every QA round.
+set -euo pipefail
+
+PORT="${RQA_PORT:-9222}"
+PROFILE="${RQA_PROFILE:-$HOME/.rdev/qa-chrome}"
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+if curl -s --max-time 2 "http://127.0.0.1:${PORT}/json/version" >/dev/null 2>&1; then
+  echo "QA Chrome already running on :${PORT}"
+  exit 0
+fi
+
+[[ -x "$CHROME" ]] || { echo "Google Chrome not found at: $CHROME" >&2; exit 1; }
+mkdir -p "$PROFILE"
+
+"$CHROME" \
+  --remote-debugging-port="$PORT" \
+  --user-data-dir="$PROFILE" \
+  --no-first-run --no-default-browser-check \
+  >/dev/null 2>&1 &
+disown
+
+for _ in $(seq 1 30); do
+  if curl -s --max-time 1 "http://127.0.0.1:${PORT}/json/version" >/dev/null 2>&1; then
+    echo "QA Chrome started on :${PORT} (profile: $PROFILE)"
+    echo "If this is the first run: sign into the QA Google account once in this window."
+    exit 0
+  fi
+  sleep 0.5
+done
+
+echo "Failed to start QA Chrome on :${PORT}" >&2
+exit 1

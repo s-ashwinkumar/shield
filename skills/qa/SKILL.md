@@ -31,13 +31,23 @@ Before touching the browser, read these sources **in order** to understand what 
 
 5. **Ask the user** (last resort) — if you can't determine what to test from any source above, ask: "I can see these files changed: <list>. Which pages should I test and what should I verify?"
 
+### Phase 0.5: Browser Mechanism & Tab Discipline
+
+Use the **chrome-devtools MCP tools** (attached to the shared QA Chrome). Do NOT use the playwright MCP for QA.
+
+1. Run `rqa-browser` (Bash) first — it ensures the dedicated QA Chrome is running on :9222 with the persistent profile `~/.rdev/qa-chrome`. Idempotent.
+2. **The browser is SHARED across parallel streams.** Tab discipline is mandatory:
+   - Open a **new tab** for this ticket's QA (first navigation = your tab). Open more tabs for this ticket if needed.
+   - Operate ONLY in tabs you opened this session. Never touch, close, or navigate other tabs.
+   - Close your tabs when the QA round ends.
+
 ### Phase 1: Auth Check
 
-Navigate to the app URL. **Default: the branch's Railway preview** — `https://webui-rhythms-pr-<PR>.up.railway.app/` (get `<PR>` from `gh pr view --json number -q .number`; the draft PR should already exist per the workflow). Use `http://localhost:3000` only if the user explicitly asked for local QA.
+Navigate (in your tab) to the app URL. **Default: the branch's Railway preview** — `https://webui-rhythms-pr-<PR>.up.railway.app/` (get `<PR>` from `gh pr view --json number -q .number`; the draft PR should already exist per the workflow). Use `http://localhost:3000` only if the user explicitly asked for local QA.
 
 - If the preview isn't up yet (build in progress), wait a few minutes and retry before reporting.
-- If redirected to login: click through Google OAuth — the browser runs with a persistent profile (`~/.rdev/browser-profile`) that stays logged into Google, so the flow should complete without credentials (click the account if an account-chooser appears).
-- Only if Google itself asks for credentials (profile session expired), **ask the user**: "The browser profile's Google session has expired — please log in once in the browser window; future runs won't need this." Wait for confirmation.
+- If redirected to login: click through Google OAuth — the QA Chrome profile stays signed into Google, so the flow should complete without credentials (click the account if an account-chooser appears).
+- Only if Google itself asks for credentials (profile session expired), **ask the user**: "The QA Chrome's Google session has expired — please log in once in the QA Chrome window; future runs won't need this." Wait for confirmation.
 - Take a snapshot to confirm you're on an authenticated page.
 
 ### Phase 2: Execute Test Plan

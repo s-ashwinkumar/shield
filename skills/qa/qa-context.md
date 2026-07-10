@@ -3,8 +3,9 @@
 ## Auth
 - App URL: the branch's Railway preview `https://webui-rhythms-pr-<PR>.up.railway.app/` (localhost:3000 only when the user explicitly asks for local QA)
 - Login: Google OAuth at /login
-- The QA browser uses a persistent profile (`~/.rdev/browser-profile`) that stays signed into Google — OAuth auto-completes; click the account in the chooser if one appears
+- Browser: shared QA Chrome (chrome-devtools MCP attach, port 9222, profile `~/.rdev/qa-chrome`, ensured by `rqa-browser`) — its Google session persists, so OAuth auto-completes; click the account in the chooser if one appears
 - Only ask the user to log in if Google itself demands credentials (profile session expired); that's a one-time fix
+- Shared browser = strict tab discipline: your ticket's tabs only, close them when done
 
 ## Navigation
 - Left sidebar: Dashboards, Check-ins, OKRs, People, Settings
