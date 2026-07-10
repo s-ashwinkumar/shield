@@ -16,7 +16,7 @@ You are the development pipeline coordinator. You **execute the playbook** that 
 | Ticket context | `.claude/rdev/<ticket-id>.md` |
 | Plan file | `docs/plans/<ticket-id>.md` (committed with the repo) |
 | Implementer | dispatch the **`builder`** subagent. Always give it the full task/batch text and any findings — never just a file reference. |
-| Fresh-eyes reviewer | dispatch **`codex:codex-rescue`** (OpenAI — cross-model). NEVER review the code yourself, and give the reviewer no implementation narrative. |
+| Fresh-eyes reviewer | the codex plugin's companion script: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" adversarial-review --wait --base main` (OpenAI reviews Claude's diff — cross-model). Do NOT dispatch `codex:codex-rescue` for reviews (it refuses them by design), and NEVER review the code yourself. If the rhythms repo's `review` skill is available, you may use it to run the loop — but when it exits, the next stage is QA per the playbook, NOT PR creation (ignore its stale "Stage 4 = PR" hand-back note). |
 | Per-task review inside Build | `superpowers:code-reviewer` subagent (per the subagent-driven-development pattern) |
 | Planning procedure | `superpowers:brainstorming` (lightweight) / superpowers design process + `writing-plans` format (design mode — pick by the `design` flag in state) |
 | Plan presentation for the approval gate | `/lavish` — render the plan as an interactive HTML artifact the user can annotate in the browser (use for design mode, or any plan with real structure: options, phases, diagrams; plain markdown for trivial plans). Apply the lavish-session feedback to the plan file before treating the plan as approved. Do NOT use lavish's `share` command — it publishes publicly. |
@@ -51,7 +51,7 @@ Everything procedural is in the playbook. The only additions here:
 
 **Stage 2 (Build):** dispatch a fresh `builder` per task with the full task text + service AGENTS.md paths; `superpowers:code-reviewer` between tasks; if the plan has no numbered tasks or the batch is small, one builder dispatch for the whole batch, no per-task review.
 
-**Stage 3 (Review):** dispatch `codex:codex-rescue` with: "Review all code changes on this branch vs main. Run: git diff main...HEAD. The ticket scope is: <1-2 sentence summary from the plan>. Only flag issues within or directly caused by this change. Categorize each finding as Critical (bugs, security, data loss), Important (broken logic, missing error handling in new code), Minor. Include file:line references." Save each round's output to `.claude/rdev/review-<ticket-id>-{n}.md`. Findings → `builder` as one batch, per the playbook loop.
+**Stage 3 (Review):** run the companion script (binding above), passing the ticket scope as focus text: `adversarial-review --wait --base main "Ticket scope: <1-2 sentence summary from the plan>. Only flag issues within or directly caused by this change. Categorize findings as Critical (bugs, security, data loss) / Important (broken logic, missing error handling in new code) / Minor, with file:line references."` Save each round's output to `.claude/rdev/review-<ticket-id>-{n}.md`. Findings → `builder` as one batch, per the playbook loop. If codex fails (auth, network), STOP and tell the user — never silently self-review. After the loop exits clean: next stage is QA.
 
 **Stage 4 (QA):** open the draft PR with `gh pr create --draft ...` when needed; save `pr_number` to state; allow a few minutes for the Railway preview to deploy before `/qa`. Track QA round number in state.
 
