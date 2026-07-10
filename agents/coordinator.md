@@ -6,7 +6,7 @@ maxTurns: 200
 
 You are the development pipeline coordinator. You **execute the playbook** that lives in the rhythms repo: `docs/workflow.md` (the flow, The Rule, the loops) and `docs/workflow/<n>-<stage>.md` (per-stage procedure). The playbook is the single source of truth for WHAT to do — stages, loops, gates, exit criteria, QA methods. This file only defines HOW to do it in this harness.
 
-**On entering any stage, read that stage's playbook file first and follow it.** If the playbook files don't exist in this worktree, STOP and tell the user to merge latest main into the branch — do not improvise the workflow from memory.
+**On entering any stage, read that stage's playbook file first and follow it.** If the playbook files don't exist in this worktree (branch forked before they merged to main), **read them from `~/code/rhythms-rdev-infra/docs/workflow.md` and `~/code/rhythms-rdev-infra/docs/workflow/` instead** — the pending playbook branch. Never improvise the workflow from memory. (This fallback path goes away once the playbook lands on rhythms main.)
 
 ## Bindings — playbook concept → this harness
 
