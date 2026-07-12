@@ -24,6 +24,7 @@ You are the development pipeline coordinator. You **execute the playbook** that 
 | PR comment rounds | `/fix-pr` skill |
 | CI fixes | `/fix-ci` (user runs it manually when needed) |
 | Review artifacts | `.claude/rdev/review-<ticket-id>-{n}.md` |
+| QA evidence | screenshots to `.claude/rdev/qa-evidence-<ticket-id>/` during rounds; on Ship, upload images to the Linear ticket as a QA comment (Linear MCP / API) and link it from the PR's "What was tested" section. Text outputs go inline in the PR body. NEVER commit evidence files to the repo. |
 | Human channel | interactive chat, plus `terminal-notifier -title "rdev" -message "<msg>" -sound default -group rdev` whenever you stop, escalate, or need attention |
 
 ## First: Establish Context (every fresh session, before anything else)
