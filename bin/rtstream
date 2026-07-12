@@ -295,11 +295,15 @@ if [[ "$GOD" == "true" ]]; then
   PERM_FLAG="--dangerously-skip-permissions"
 fi
 
+# Coordinator selection: default = playbook-driven v2 (agents/coordinator.md).
+# Fallback to the pre-playbook pipeline: RDEV_COORDINATOR=coordinator-v1 rtstream <ticket>
+COORD_AGENT="${RDEV_COORDINATOR:-coordinator}"
+
 # Launch coordinator in the left pane
 # Always start a fresh session — coordinator reads state.json to know where to resume
 # Pass initial message so coordinator immediately fetches ticket and starts planning
 tmux send-keys -t "$TMUX_SESSION:$NAME.0" \
-  "cd $WORK_DIR && claude --agent coordinator $PERM_FLAG -n 'rdev:$NAME' 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true" Enter
+  "cd $WORK_DIR && claude --agent $COORD_AGENT $PERM_FLAG -n 'rdev:$NAME' 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true" Enter
 
 echo ""
 if [[ "$RESUMING" == "true" ]]; then
@@ -311,7 +315,7 @@ else
   echo "Stream '$NAME' started (mode: $MODE, branch: $BRANCH)"
 fi
 echo "  Directory: $WORK_DIR"
-echo "  Agent: coordinator"
+echo "  Agent: $COORD_AGENT"
 echo ""
 
 if [[ "$RESUMING" == "false" ]]; then
