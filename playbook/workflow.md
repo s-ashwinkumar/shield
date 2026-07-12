@@ -6,7 +6,10 @@ hand or with any coding agent (Cursor, Codex, Claude Code, ...). Each stage
 links to a short doc with the details — this page is only the flow.
 
 > **Status: opt-in.** This workflow is an option, not (yet) the team standard.
-> Use it by telling your tool: *"Follow docs/workflow.md for this ticket."*
+> It is currently distributed by the rdev harness (copied into each worktree
+> at `.claude/rdev/playbook/`); when the team adopts it, it moves into the
+> rhythms repo as `docs/workflow.md` verbatim. Use it by telling your tool:
+> *"Follow the workflow playbook for this ticket."*
 
 ## The flow
 

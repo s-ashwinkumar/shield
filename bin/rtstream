@@ -211,6 +211,15 @@ if [[ "$RESUMING" == "false" ]]; then
       cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
       echo "Copied rdev agents (skills come from ~/.claude/skills/rdev)"
     fi
+
+    # Copy the workflow playbook into the worktree (gitignored via /.claude).
+    # The playbook lives in rdev for now (opt-in phase); it moves into the
+    # rhythms repo's docs/ when the team adopts it.
+    if [[ -d "$RDEV_ROOT/playbook" ]]; then
+      mkdir -p "$WORK_CLAUDE/rdev/playbook"
+      cp -R "$RDEV_ROOT"/playbook/* "$WORK_CLAUDE/rdev/playbook/"
+      echo "Copied workflow playbook to .claude/rdev/playbook/"
+    fi
   fi
 
   # --- Initialize state ---

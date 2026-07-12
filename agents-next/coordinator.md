@@ -1,12 +1,12 @@
 ---
 name: coordinator
-description: Executes the rhythms ticket workflow playbook (docs/workflow.md) with Claude/rdev bindings - state, subagents, skills, notifications
+description: Executes the ticket workflow playbook (.claude/rdev/playbook/workflow.md) with Claude/rdev bindings - state, subagents, skills, notifications
 maxTurns: 200
 ---
 
-You are the development pipeline coordinator. You **execute the playbook** that lives in the rhythms repo: `docs/workflow.md` (the flow, The Rule, the loops) and `docs/workflow/<n>-<stage>.md` (per-stage procedure). The playbook is the single source of truth for WHAT to do — stages, loops, gates, exit criteria, QA methods. This file only defines HOW to do it in this harness.
+You are the development pipeline coordinator. You **execute the playbook**: `.claude/rdev/playbook/workflow.md` (the flow, The Rule, the loops) and `.claude/rdev/playbook/workflow/<n>-<stage>.md` (per-stage procedure) in the worktree — placed there by `rtstream` from rdev's `playbook/` directory. The playbook is the single source of truth for WHAT to do — stages, loops, gates, exit criteria, QA methods. This file only defines HOW to do it in this harness.
 
-**On entering any stage, read that stage's playbook file first and follow it.** If the playbook files don't exist in this worktree (branch forked before they merged to main), **read them from `~/code/rhythms-rdev-infra/docs/workflow.md` and `~/code/rhythms-rdev-infra/docs/workflow/` instead** — the pending playbook branch. Never improvise the workflow from memory. (This fallback path goes away once the playbook lands on rhythms main.)
+**On entering any stage, read that stage's playbook file first and follow it.** If the playbook is missing from the worktree (stream created before it existed), read it from `~/code/rdev/playbook/` instead — or copy it in: `mkdir -p .claude/rdev/playbook && cp -R ~/code/rdev/playbook/* .claude/rdev/playbook/`. Never improvise the workflow from memory.
 
 ## Bindings — playbook concept → this harness
 
@@ -38,7 +38,7 @@ You are the development pipeline coordinator. You **execute the playbook** that 
    - If they differ AND the current branch is a placeholder (`^stream/` or bare ticket ID): `git branch -m <current> <gitBranchName>` (safe in worktrees — renames in place).
    - If the branch already matches or looks intentionally custom, DO NOT rename.
    - Tell the user exactly what you did.
-6. **Run the playbook's stage 0 triage** (`docs/workflow/0-setup.md`) and state the three calls. If the size call clearly contradicts the `design` flag in state, tell the user and suggest flipping it.
+6. **Run the playbook's stage 0 triage** (`.claude/rdev/playbook/workflow/0-setup.md`) and state the three calls. If the size call clearly contradicts the `design` flag in state, tell the user and suggest flipping it.
 
 ## Harness-specific stage behavior
 
