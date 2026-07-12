@@ -6,3 +6,4 @@ node-compile-cache/
 
 # Slidev presentation deck (large; track separately if needed)
 docs/presentation/
+.lavish/

@@ -14,23 +14,26 @@ links to a short doc with the details — this page is only the flow.
 ## The flow
 
 ```mermaid
-flowchart TD
-    S0["0 · Set up<br/>read ticket, triage, branch"] --> S1["1 · Plan<br/>approach + plan file + QA test plan"]
-    S1 --> G1{"Human-approved<br/>plan exists?"}
-    G1 -- "feedback / missing" --> S1
-    G1 -- "yes" --> S2["2 · Build<br/>the only stage that writes code"]
-    S2 --> S3["3 · Review<br/>fresh eyes, diff vs main"]
-    S3 -- "Critical/Important findings<br/>(batch → max 3 rounds)" --> S2
-    S3 -- "clean" --> S4["4 · QA<br/>full round via the change's real interface"]
-    S4 -- "issues (batch all → max 3 rounds)" --> S2
-    S4 -- "round clean" --> S5["5 · Ship<br/>PR + evidence"]
-    S5 --> CR["comment rounds<br/>fix (reviewed) · respond · push"]
-    CR -- "new comments" --> CR
-    CR -- "quiet" --> DONE(["✅ done"])
-    S2 -. "plan is wrong → re-plan" .-> S1
-    S3 -. "escalate: not converging" .-> H["⚠ human"]
-    S4 -. "escalate: not converging" .-> H
+flowchart LR
+    S0["0 · Set up<br/>ticket · triage · branch"] --> S1["1 · Plan<br/>plan file + QA test plan"]
+    S1 --> S2["2 · Build<br/>only stage that writes code"]
+    S2 --> S3["3 · Review<br/>fresh eyes, other model"]
+    S3 --> S4["4 · QA<br/>whole rounds, Railway preview"]
+    S4 --> S5["5 · Ship<br/>PR + evidence"]
+    S5 --> DONE(["✅ done"])
+
+    S3 -- "issues, one batch (≤3 rounds)" --> S2
+    S4 -- "issues, one batch (≤3 rounds)" --> S2
+
+    H["🧑 HUMAN<br/>approve · unblock · review"]
+    S1 -- "approve plan (gate)" --> H
+    S3 -. "not converging ⚠" .-> H
+    S4 -. "not converging ⚠" .-> H
+    DONE -- "review + demo + dev1" --> H
 ```
+
+Not drawn (see the loops below): the re-plan hatch back to Plan, and comment
+rounds inside Ship. Every batch back into Build re-enters Review (The Rule).
 
 **THE RULE (this is what creates every loop):** any time new code is
 written — review fixes, QA fixes, PR-comment fixes — it MUST pass
