@@ -211,15 +211,6 @@ if [[ "$RESUMING" == "false" ]]; then
       cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
       echo "Copied rdev agents (skills come from ~/.claude/skills/rdev)"
     fi
-
-    # Copy the workflow playbook into the worktree (gitignored via /.claude).
-    # The playbook lives in rdev for now (opt-in phase); it moves into the
-    # rhythms repo's docs/ when the team adopts it.
-    if [[ -d "$RDEV_ROOT/playbook" ]]; then
-      mkdir -p "$WORK_CLAUDE/rdev/playbook"
-      cp -R "$RDEV_ROOT"/playbook/* "$WORK_CLAUDE/rdev/playbook/"
-      echo "Copied workflow playbook to .claude/rdev/playbook/"
-    fi
   fi
 
   # --- Initialize state ---
@@ -295,9 +286,10 @@ if [[ "$GOD" == "true" ]]; then
   PERM_FLAG="--dangerously-skip-permissions"
 fi
 
-# Coordinator selection: default = playbook-driven v2 (agents/coordinator.md).
-# Fallback to the pre-playbook pipeline: RDEV_COORDINATOR=coordinator-v1 rtstream <ticket>
-COORD_AGENT="${RDEV_COORDINATOR:-coordinator}"
+# rtstream = the OLD (pre-playbook) system: launches coordinator-v1.
+# The new playbook-driven system lives on the r* scripts (rstream → coordinator).
+# Override if ever needed: RDEV_COORDINATOR=coordinator rtstream <ticket>
+COORD_AGENT="${RDEV_COORDINATOR:-coordinator-v1}"
 
 # Launch coordinator in the left pane
 # Always start a fresh session — coordinator reads state.json to know where to resume

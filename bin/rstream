@@ -221,6 +221,15 @@ if [[ "$RESUMING" == "false" ]]; then
       echo "Copied rdev agents (skills come from ~/.claude/skills/rdev)"
     fi
 
+    # Copy the workflow playbook into the worktree (gitignored via /.claude).
+    # The playbook lives in rdev for now (opt-in phase); it moves into the
+    # rhythms repo's docs/ when the team adopts it.
+    if [[ -d "$RDEV_ROOT/playbook" ]]; then
+      mkdir -p "$WORK_CLAUDE/rdev/playbook"
+      cp -R "$RDEV_ROOT"/playbook/* "$WORK_CLAUDE/rdev/playbook/"
+      echo "Copied workflow playbook to .claude/rdev/playbook/"
+    fi
+
     # Pre-approve project .mcp.json servers for this stream. Worktree Claude
     # sessions run non-interactively (the coordinator agent), so Claude can't
     # answer the "approve these MCP servers?" prompt and instead auto-writes
@@ -274,6 +283,11 @@ if [[ "$RESUMING" == "true" ]] && [[ "$LOCAL" == "false" ]]; then
   mkdir -p "$WORK_CLAUDE/agents"
   cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
   echo "Updated agents from rdev (skills come from ~/.claude/skills/rdev)"
+  if [[ -d "$RDEV_ROOT/playbook" ]]; then
+    mkdir -p "$WORK_CLAUDE/rdev/playbook"
+    cp -R "$RDEV_ROOT"/playbook/* "$WORK_CLAUDE/rdev/playbook/"
+    echo "Refreshed workflow playbook"
+  fi
 fi
 
 
