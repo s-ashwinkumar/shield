@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# rfleet -- fleet watcher: turns stream state changes into attention items.
+#
+# Deterministic, zero-token. Scans every stream's .claude/rdev/state.json,
+# diffs against a cache, and emits attention-item JSON files that the captain
+# agent consumes. Also: batched wake-up injection into the captain pane,
+# dead-man fallback to terminal-notifier, heartbeat, auto-cancel of stale
+# items. Replaces rwatch for the r* (new) system.
+#
+# Modes / env:
+#   RFLEET_INTERVAL=15       scan every N seconds
+#   RFLEET_DEADMAN_MIN=10    unacked item age before raw notification
+#   RFLEET_SHADOW=1          write items only (no wake-ups, no dead-man)
+#   RFLEET_ONCE=1            single scan then exit (tests)
+#   RFLEET_NO_PANES=1        skip pane/agent checks (tests, no herdr)
+#   RFLEET_SCAN_DIR=PATH     override stream discovery with a fixture dir
+#   RFLEET_HOME=PATH         override ~/.rdev/attention
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+INTERVAL="${RFLEET_INTERVAL:-15}"
+DEADMAN_MIN="${RFLEET_DEADMAN_MIN:-10}"
+SHADOW="${RFLEET_SHADOW:-0}"
+ONCE="${RFLEET_ONCE:-0}"
+NO_PANES="${RFLEET_NO_PANES:-0}"
+ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
+CAPTAIN_AGENT="${RFLEET_CAPTAIN:-rdev:captain}"
+
+mkdir -p "$ATT/pending" "$ATT/acked" "$ATT/done" "$ATT/.cache"
+
+# Stream discovery: fixture dir override, else rdev config worktrees.
+if [[ -n "${RFLEET_SCAN_DIR:-}" ]]; then
+  SCAN_DIR="$RFLEET_SCAN_DIR"
+else
+  source "$SCRIPT_DIR/_rdev_lib.sh"
+  rdev_load_config
+  SCAN_DIR="$WORKTREE_DIR"
+fi
+
+# Patterns meaning the agent is waiting on a human (ported from rwatch)
+STUCK_PATTERNS=(
+  "Allow once" "Allow always" "Do you want to proceed"
+  "Press Enter to continue" "What should Claude do" "Interrupted"
+  "\[Y/n\]" "\[y/N\]" "Permission requested"
+)
+STUCK_RE=$(printf "|%s" "${STUCK_PATTERNS[@]}"); STUCK_RE="${STUCK_RE:1}"
+
+log() { echo "rfleet: $*"; }
+
+# emit <stream> <type> <summary> <state_file>
+# Dedupe: skip if a pending item for the same stream+type already exists.
+emit() {
+  local stream="$1" type="$2" summary="$3" state_file="$4"
+  if ls "$ATT/pending/${stream}--${type}--"*.json >/dev/null 2>&1; then
+    return 0
+  fi
+  local now; now=$(date +%s)
+  local id="${stream}--${type}--${now}"
+  jq -n --arg id "$id" --arg stream "$stream" --arg type "$type" \
+        --arg summary "$summary" --argjson now "$now" \
+        --argjson deadman "$DEADMAN_MIN" \
+        --slurpfile st <(jq '{stage, ticket, demo_required, dev1_ready, pr_url} | with_entries(select(.value != null))' "$state_file" 2>/dev/null || echo '{}') \
+        '{id:$id, stream:$stream, type:$type, summary:$summary,
+          created_at:$now, acked_at:null, escalated_raw:false,
+          deadman_after_min:$deadman, state_snapshot:($st[0] // {})}' \
+        > "$ATT/pending/${id}.json"
+  NEW_ITEMS+=("$id")
+  log "item: $id — $summary"
+}
+
+# cancel <pending-file> <reason>
+cancel() {
+  local f="$1" reason="$2" base
+  base=$(basename "$f")
+  jq --arg r "$reason" '.outcome = $r' "$f" > "$f.tmp" && mv "$f.tmp" "$ATT/done/$base"
+  rm -f "$f"
+  log "superseded: $base ($reason)"
+}
+
+scan_stream() {
+  local wt="$1"
+  local stream state cache
+  stream=$(basename "$wt")
+  state="$wt/.claude/rdev/state.json"
+  [[ -f "$state" ]] || return 0
+  cache="$ATT/.cache/${stream}.json"
+
+  local cur_stage prev_stage ticket
+  cur_stage=$(jq -r '.stage // ""' "$state" 2>/dev/null) || return 0
+  prev_stage=$(jq -r '.stage // ""' "$cache" 2>/dev/null || echo "__none__")
+  ticket=$(jq -r '.ticket // ""' "$state")
+
+  # 1) Stage transitions
+  if [[ "$cur_stage" == "plan" && "$prev_stage" != "plan" ]]; then
+    emit "$stream" "plan_gate" "Plan ready for approval (${ticket:-$stream})" "$state"
+  fi
+  if [[ "$cur_stage" == "done" && "$prev_stage" != "done" ]]; then
+    local demo dev1 extra=""
+    demo=$(jq -r '.demo_required // false' "$state")
+    dev1=$(jq -r '.dev1_ready // false' "$state")
+    [[ "$demo" == "true" ]] && extra=" — Supercut demo needed"
+    [[ "$dev1" == "false" ]] && extra="$extra; then ready-for-dev1"
+    emit "$stream" "done_followups" "Stream done (${ticket:-$stream})${extra}" "$state"
+  fi
+
+  # 2) Coordinator-flagged attention (state.attention = {type, summary, ts})
+  local att_ts prev_att_ts
+  att_ts=$(jq -r '.attention.ts // ""' "$state")
+  prev_att_ts=$(jq -r '.attention.ts // ""' "$cache" 2>/dev/null || echo "")
+  if [[ -n "$att_ts" && "$att_ts" != "$prev_att_ts" ]]; then
+    local att_type att_summary
+    att_type=$(jq -r '.attention.type // "blocked"' "$state")
+    att_summary=$(jq -r '.attention.summary // "stream needs attention"' "$state")
+    emit "$stream" "$att_type" "$att_summary (${ticket:-$stream})" "$state"
+  fi
+
+  # 3) Liveness + stuck prompts (needs herdr)
+  if [[ "$NO_PANES" != "1" && "$cur_stage" != "done" && -n "$cur_stage" ]]; then
+    local agent_json
+    agent_json=$("$SCRIPT_DIR/rdev-mux" state --target "rdev:$stream" 2>/dev/null || true)
+    if [[ -z "$agent_json" ]]; then
+      emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+    else
+      local tail
+      tail=$("$SCRIPT_DIR/rdev-mux" read --target "rdev:$stream" --lines 15 2>/dev/null || true)
+      if [[ -n "$tail" ]] && echo "$tail" | grep -qE "$STUCK_RE"; then
+        emit "$stream" "stuck" "Agent waiting on a prompt (stage: $cur_stage)" "$state"
+      fi
+    fi
+  fi
+
+  cp "$state" "$cache" 2>/dev/null || true
+}
+
+auto_cancel() {
+  local f stream type wt state cur_stage att_ts
+  for f in "$ATT/pending/"*.json; do
+    [[ -f "$f" ]] || continue
+    stream=$(jq -r '.stream' "$f"); type=$(jq -r '.type' "$f")
+    wt="$SCAN_DIR/$stream"; state="$wt/.claude/rdev/state.json"
+    [[ -f "$state" ]] || continue
+    cur_stage=$(jq -r '.stage // ""' "$state")
+    case "$type" in
+      plan_gate)  [[ "$cur_stage" != "plan" ]] && cancel "$f" "superseded" ;;
+      stuck|died) : ;;  # cleared by ack; liveness re-emits if still true
+      done_followups) : ;;
+      *) # coordinator-flagged types: cancel when the flag was cleared
+         att_ts=$(jq -r '.attention.ts // ""' "$state")
+         [[ -z "$att_ts" ]] && cancel "$f" "superseded" ;;
+    esac
+  done
+}
+
+deadman() {
+  [[ "$SHADOW" == "1" ]] && return 0
+  local f now age summary stream
+  now=$(date +%s)
+  for f in "$ATT/pending/"*.json; do
+    [[ -f "$f" ]] || continue
+    [[ $(jq -r '.acked_at // ""' "$f") == "" ]] || continue
+    [[ $(jq -r '.escalated_raw' "$f") == "false" ]] || continue
+    age=$(( now - $(jq -r '.created_at' "$f") ))
+    if (( age > DEADMAN_MIN * 60 )); then
+      stream=$(jq -r '.stream' "$f"); summary=$(jq -r '.summary' "$f")
+      terminal-notifier -title "rdev" -message "[unrouted] $stream: $summary" \
+        -sound default -group rdev 2>/dev/null || true
+      jq '.escalated_raw = true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+      log "dead-man fired: $(basename "$f")"
+    fi
+  done
+}
+
+wakeup() {
+  [[ "$SHADOW" == "1" || "$NO_PANES" == "1" ]] && return 0
+  (( ${#NEW_ITEMS[@]} > 0 )) || return 0
+  local pane msg
+  pane=$("$SCRIPT_DIR/rdev-mux" state --target "$CAPTAIN_AGENT" 2>/dev/null \
+         | jq -r '.result.agent.pane_id // empty' 2>/dev/null || true)
+  if [[ -z "$pane" ]]; then
+    log "no captain pane — wake-up skipped (${#NEW_ITEMS[@]} item(s) pending; dead-man armed)"
+    return 0
+  fi
+  msg="🔔 attention: ${#NEW_ITEMS[@]} new item(s): ${NEW_ITEMS[*]}. Work the queue at $ATT/pending/."
+  "$SCRIPT_DIR/rdev-mux" pane-run --pane "$pane" --text "$msg" >/dev/null 2>&1 || \
+    log "wake-up injection failed"
+}
+
+scan() {
+  NEW_ITEMS=()
+  local wt
+  for wt in "$SCAN_DIR"/*/; do
+    [[ -d "$wt" ]] && scan_stream "${wt%/}"
+  done
+  auto_cancel
+  deadman
+  wakeup
+  touch "$ATT/heartbeat"
+}
+
+log "watching $SCAN_DIR every ${INTERVAL}s (shadow=$SHADOW, deadman=${DEADMAN_MIN}m, queue=$ATT)"
+while true; do
+  scan
+  [[ "$ONCE" == "1" ]] && exit 0
+  sleep "$INTERVAL"
+done

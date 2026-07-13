@@ -24,7 +24,7 @@ _jq() {
 
 # flag parser: sets name/cwd/tab/target/text/dir/ratio; argv after `--` lands in REST
 _parse() {
-  REST=(); name=""; cwd=""; tab=""; ws=""; pane=""; key=""; target=""; text=""; dir="right"; ratio="0.3"
+  REST=(); name=""; cwd=""; tab=""; ws=""; pane=""; key=""; target=""; text=""; dir="right"; ratio="0.3"; lines=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --name) name="$2"; shift 2 ;;
@@ -37,6 +37,7 @@ _parse() {
       --text) text="$2"; shift 2 ;;
       --dir) dir="$2"; shift 2 ;;
       --ratio) ratio="$2"; shift 2 ;;
+      --lines) lines="$2"; shift 2 ;;
       --) shift; REST=("$@"); break ;;
       *) echo "rdev-mux: bad flag '$1'" >&2; return 2 ;;
     esac
@@ -86,6 +87,7 @@ case "$verb" in
   stream-list) _parse "$@"; _mux_run herdr tab list \
                  | _jq --arg w "$ws" '.result.tabs[]|select(.workspace_id==$w)|"  \(.label)  [\(.agent_status)]"' ;;
   send)        _parse "$@"; _mux_run herdr agent send "$target" "$text" ;;
+  read)        _parse "$@"; _mux_run herdr agent read "$target" --source visible --lines "${lines:-20}" ;;
   state)       _parse "$@"; _mux_run herdr agent get "$target" ;;
   kill)        _parse "$@"; _mux_run herdr tab close "$tab" ;;
   *) echo "rdev-mux: unknown verb '$verb'" >&2; exit 2 ;;

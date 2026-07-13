@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# rcaptain -- launch/ensure the first mate: rfleet watcher + captain agent.
+#
+# Idempotent: run it any time. Ensures (1) the rfleet watcher daemon is
+# running, (2) a 'captain' Herdr tab exists in the rdev workspace with a
+# Claude session running the captain agent (named rdev:captain).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
+mkdir -p "$ATT"
+
+# --- 1) Ensure rfleet ---
+if pgrep -f "bin/rfleet" >/dev/null 2>&1; then
+  echo "rfleet: running"
+else
+  nohup "$SCRIPT_DIR/rfleet" >> "$ATT/rfleet.log" 2>&1 &
+  disown
+  echo "rfleet: started (log: $ATT/rfleet.log)"
+fi
+
+# --- 2) Ensure the captain agent ---
+EXISTING="$(rdev-mux state --target rdev:captain 2>/dev/null | jq -r '.result.agent.pane_id // empty' 2>/dev/null || true)"
+if [[ -n "$EXISTING" ]]; then
+  echo "captain: already running (pane $EXISTING)"
+  echo ""
+  echo "Talk to it in the 'captain' tab. Pending attention items:"
+  ls "$ATT/pending" 2>/dev/null | grep -c '\.json$' || echo 0
+  exit 0
+fi
+
+WS_ID="$(rdev-mux space-ensure --name "$RDEV_WORKSPACE" --cwd "$RHYTHMS_DIR")"
+if [[ -z "$WS_ID" ]]; then
+  echo "Error: no Herdr workspace '$RDEV_WORKSPACE'. Is the server running? (herdr status server)"
+  exit 1
+fi
+
+TAB_ID="$(rdev-mux tab-find --name captain --workspace "$WS_ID")"
+if [[ -z "$TAB_ID" ]]; then
+  TAB_ID="$(rdev-mux tab-new --name captain --cwd "$RDEV_ROOT" --workspace "$WS_ID")"
+fi
+if [[ -z "$TAB_ID" ]]; then
+  echo "Error: failed to create the captain tab."
+  exit 1
+fi
+
+P0="$(rdev-mux pane-first --tab "$TAB_ID")"
+if [[ -z "$P0" ]]; then
+  echo "Error: no pane in the captain tab."
+  exit 1
+fi
+
+CAPTAIN_CMD="claude --agent captain --permission-mode auto -n rdev:captain 'On duty. Check the attention queue (~/.rdev/attention/pending/) and the rfleet heartbeat, then give me a one-screen fleet status.'"
+rdev-mux pane-run --pane "$P0" --text "$CAPTAIN_CMD" >/dev/null
+
+echo "captain: launched in tab 'captain' (agent rdev:captain)"
+echo "Say things like: 'start USENG-1101' · 'what needs me?' · answers to items inline."

@@ -102,7 +102,27 @@ def fmt_cost(c):
     return f"${c:.2f}"
 
 
+def role_of(session):
+    """Classify a session: captain (harness overhead) / stream (work) / other."""
+    name = session.get("name") or ""
+    if name == "rdev:captain":
+        return "captain"
+    if "rdev:" in name:
+        return "stream"
+    return "other"
+
+
 def main():
+    args = sys.argv[1:]
+    show_roles = "--roles" in args
+    days_filter = None
+    if "--days" in args:
+        try:
+            days_filter = int(args[args.index("--days") + 1])
+        except (IndexError, ValueError):
+            print("Usage: rusage [--roles] [--days N]")
+            return
+
     projects_dir = Path.home() / ".claude" / "projects"
 
     # Find all JSONL files across all projects
@@ -133,6 +153,13 @@ def main():
 
     # Sort by timestamp
     sessions.sort(key=lambda s: s["first_ts"] or "")
+
+    if days_filter is not None:
+        cutoff_ts = (datetime.now() - timedelta(days=days_filter)).strftime("%Y-%m-%d")
+        sessions = [s for s in sessions if (s["first_ts"] or "") >= cutoff_ts]
+        if not sessions:
+            print(f"No sessions in the last {days_filter} day(s).")
+            return
 
     # Aggregate
     total_input = sum(s["input_tokens"] for s in sessions)
@@ -169,6 +196,34 @@ def main():
     print(f"  Cache write:     {fmt_tokens(total_cache_write)}")
     print(f"  Est. API cost:   {fmt_cost(total_cost)} (if on Opus API pricing)")
     print()
+
+    # Role breakdown: harness overhead (captain) vs work (streams) vs other
+    if show_roles:
+        print("-" * 70)
+        print("ROLES: harness overhead vs work")
+        print("-" * 70)
+        for role, label in (("captain", "captain (harness overhead)"),
+                            ("stream", "streams (work)"),
+                            ("other", "other sessions")):
+            group = [s for s in sessions if role_of(s) == role]
+            if not group:
+                continue
+            g_in = sum(s["input_tokens"] for s in group)
+            g_out = sum(s["output_tokens"] for s in group)
+            g_cr = sum(s["cache_read"] for s in group)
+            g_cw = sum(s["cache_write"] for s in group)
+            g_cost = estimate_cost(g_in, g_out, g_cr, g_cw)
+            print(f"  {label:<28} {len(group):>4} sess   in: {fmt_tokens(g_in):>8}   out: {fmt_tokens(g_out):>8}   cost: {fmt_cost(g_cost)}")
+        cap = [s for s in sessions if role_of(s) == "captain"]
+        work = [s for s in sessions if role_of(s) == "stream"]
+        if cap and work:
+            cap_cost = estimate_cost(sum(s["input_tokens"] for s in cap), sum(s["output_tokens"] for s in cap),
+                                     sum(s["cache_read"] for s in cap), sum(s["cache_write"] for s in cap))
+            work_cost = estimate_cost(sum(s["input_tokens"] for s in work), sum(s["output_tokens"] for s in work),
+                                      sum(s["cache_read"] for s in work), sum(s["cache_write"] for s in work))
+            if work_cost > 0:
+                print(f"  overhead ratio: captain = {cap_cost / work_cost * 100:.1f}% of stream burn")
+        print()
 
     # rdev breakdown
     if rdev_sessions:
