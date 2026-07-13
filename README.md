@@ -2,6 +2,11 @@
 
 **Strategic Herding, Intervention, Escalation & LLM Dispatch**
 
+<p align="center">
+  <img src="assets/coulson.png" alt="Coulson on duty: calm handler, chaotic fleet, everything under control" width="720">
+</p>
+<p align="center"><em>Coulson, reporting. The fleet is fine. One screen is on fire. This is normal.</em></p>
+
 A personal harness for running a *fleet* of autonomous coding agents — many tickets in
 parallel, each in its own git worktree, each following a shared playbook — with the human
 doing exactly two things: approving plans, and answering escalations. Everything else is
