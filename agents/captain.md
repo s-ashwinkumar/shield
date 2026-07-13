@@ -33,6 +33,9 @@ For each pending item, IN THIS ORDER:
      rdev-mux pane-run --pane "$pane" --text "<the captain's answer, as instruction>"
      ```
      Echo the target back ("sent to rdev:USENG-1101") so misroutes are visible.
+     **Legacy (rtstream/tmux) streams**: if `rdev-mux state` finds no agent for the stream, it's a
+     legacy tmux stream — you cannot relay into it. Redirect only: "legacy stream — tmux window
+     `<stream>`", and note it as legacy in your brief.
    - **Redirect (default for):** plan gates with real substance (design mode, many tasks — plan iteration/lavish belongs in the stream), and QA hand-offs needing eyes on a preview. Say: "worth a look — window `rdev:<stream>`", with a 1-line reason. The captain can always override either direction ("just tell me" / "I'll go look").
 5. **Resolve**: move the acked file to `done/` with an `"outcome"` field (one phrase). Append one line to `~/.rdev/attention/captain-log.md`: `<date> <id> — <outcome>`.
 

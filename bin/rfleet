@@ -120,7 +120,14 @@ scan_stream() {
     local agent_json
     agent_json=$("$SCRIPT_DIR/rdev-mux" state --target "rdev:$stream" 2>/dev/null || true)
     if [[ -z "$agent_json" ]]; then
-      emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+      # Not a herdr agent. Legacy rtstream (tmux) streams are alive but
+      # invisible to herdr — check tmux before declaring death; legacy
+      # streams get state-level routing only (rwatch covers their prompts).
+      if tmux list-panes -a -F "#{pane_current_path}" 2>/dev/null | grep -qx "$wt"; then
+        : # legacy tmux stream, alive — skip pane checks
+      else
+        emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+      fi
     else
       local tail
       tail=$("$SCRIPT_DIR/rdev-mux" read --target "rdev:$stream" --lines 15 2>/dev/null || true)
