@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# shield -- S.H.I.E.L.D.: Strategic Herding, Intervention, Escalation & LLM Dispatch.
+# The front door. Routes subcommands to the harness scripts (r* names still work).
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+sub="${1:-help}"; shift 2>/dev/null || true
+case "$sub" in
+  stream)   exec "$SCRIPT_DIR/rstream"     "$@" ;;   # dispatch an agent of S.H.I.E.L.D.
+  coulson)  exec "$SCRIPT_DIR/rcaptain"    "$@" ;;   # put the handler on duty
+  watch)    exec "$SCRIPT_DIR/rfleet"      "$@" ;;   # fleet watcher (deterministic)
+  status)   exec "$SCRIPT_DIR/rstatus"     "$@" ;;
+  usage)    exec "$SCRIPT_DIR/rusage"      "$@" ;;
+  browser)  exec "$SCRIPT_DIR/rqa-browser" "$@" ;;
+  build)    exec "$SCRIPT_DIR/rbuild"      "$@" ;;
+  forward)  exec "$SCRIPT_DIR/rforward"    "$@" ;;
+  resume)   exec "$SCRIPT_DIR/rresume"     "$@" ;;
+  clean)    exec "$SCRIPT_DIR/rclean"      "$@" ;;
+  mux)      exec "$SCRIPT_DIR/rdev-mux"    "$@" ;;
+  help|--help|-h|*)
+    cat <<'EOF'
+S.H.I.E.L.D. — Strategic Herding, Intervention, Escalation & LLM Dispatch
+
+  shield stream <ticket>   dispatch an agent of S.H.I.E.L.D. (worktree + coordinator)
+  shield coulson           put Coulson on duty (fleet watcher + attention handler)
+  shield watch             run the fleet watcher alone (RFLEET_SHADOW=1 for shadow mode)
+  shield status            fleet at a glance
+  shield usage [--roles]   token/cost accounting (counterfactual, not a bill)
+  shield browser           ensure the shared QA Chrome (:9222)
+  shield build|forward|resume|clean   stream lifecycle
+  shield mux <verb>        substrate adapter (herdr)
+
+Legacy r*-prefixed commands still work; rt* is the retired tmux generation.
+EOF
+    ;;
+esac

@@ -3,7 +3,7 @@
 #
 # Deterministic, zero-token. Scans every stream's .claude/rdev/state.json,
 # diffs against a cache, and emits attention-item JSON files that the captain
-# agent consumes. Also: batched wake-up injection into the captain pane,
+# agent consumes. Also: batched wake-up injection into the coulson pane,
 # dead-man fallback to terminal-notifier, heartbeat, auto-cancel of stale
 # items. Replaces rwatch for the r* (new) system.
 #
@@ -25,7 +25,7 @@ SHADOW="${RFLEET_SHADOW:-0}"
 ONCE="${RFLEET_ONCE:-0}"
 NO_PANES="${RFLEET_NO_PANES:-0}"
 ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
-CAPTAIN_AGENT="${RFLEET_CAPTAIN:-rdev:captain}"
+CAPTAIN_AGENT="${RFLEET_CAPTAIN:-rdev:coulson}"
 
 mkdir -p "$ATT/pending" "$ATT/acked" "$ATT/done" "$ATT/.cache"
 

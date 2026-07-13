@@ -111,7 +111,7 @@ def role_of(s):
     transcript, then the session title, then the project path (worktrees
     are per-stream project dirs).
     """
-    if "captain" in s["agent_names"] or s["name"] == "rdev:captain":
+    if s["agent_names"] & {"coulson", "captain"} or s["name"] in ("rdev:coulson", "rdev:captain"):
         return "captain"
     if s["agent_names"] & {"coordinator", "coordinator-v1", "builder", "reviewer"}:
         return "stream"
