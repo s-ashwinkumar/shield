@@ -86,6 +86,19 @@ scan_stream() {
   [[ -f "$state" ]] || return 0
   cache="$ATT/.cache/${stream}.json"
 
+  # First sight of a stream = BASELINE, not events: adopt the current state
+  # silently unless it changed recently (a genuinely-waiting gate). Prevents
+  # watcher (re)starts from backfilling attention items for historical
+  # worktrees (done long ago, dead sessions, stale gates).
+  if [[ ! -f "$cache" ]]; then
+    local state_age=$(( $(date +%s) - $(stat -f %m "$state" 2>/dev/null || echo 0) ))
+    if (( state_age > ${RFLEET_ADOPT_SEC:-3600} )); then
+      cp "$state" "$cache" 2>/dev/null || true
+      log "adopted (baseline, state ${state_age}s old): $stream"
+      return 0
+    fi
+  fi
+
   local cur_stage prev_stage ticket
   cur_stage=$(jq -r '.stage // ""' "$state" 2>/dev/null) || return 0
   prev_stage=$(jq -r '.stage // ""' "$cache" 2>/dev/null || echo "__none__")
