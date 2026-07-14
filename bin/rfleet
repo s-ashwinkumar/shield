@@ -136,8 +136,16 @@ scan_stream() {
       # Not a herdr agent. Legacy rtstream (tmux) streams are alive but
       # invisible to herdr — check tmux before declaring death; legacy
       # streams get state-level routing only (rwatch covers their prompts).
-      if tmux list-panes -a -F "#{pane_current_path}" 2>/dev/null | grep -qx "$wt"; then
-        : # legacy tmux stream, alive — skip pane checks
+      local tmux_pane
+      tmux_pane=$(tmux list-panes -a -F "#{pane_current_path} #{pane_id}" 2>/dev/null \
+                  | awk -v p="$wt" '$1==p {print $2; exit}')
+      if [[ -n "$tmux_pane" ]]; then
+        # Legacy tmux stream, alive — read-only stuck check via capture-pane.
+        local ltail
+        ltail=$(tmux capture-pane -p -t "$tmux_pane" 2>/dev/null | tail -15)
+        if [[ -n "$ltail" ]] && echo "$ltail" | grep -qE "$STUCK_RE"; then
+          emit "$stream" "stuck" "Agent waiting on a prompt (legacy tmux, stage: $cur_stage)" "$state"
+        fi
       else
         emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
       fi
