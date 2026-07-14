@@ -28,6 +28,7 @@ ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
 CAPTAIN_AGENT="${RFLEET_CAPTAIN:-rdev:coulson}"
 
 mkdir -p "$ATT/pending" "$ATT/acked" "$ATT/done" "$ATT/.cache"
+echo $$ > "$ATT/rfleet.pid"
 
 # Stream discovery: fixture dir override, else rdev config worktrees.
 if [[ -n "${RFLEET_SCAN_DIR:-}" ]]; then

@@ -61,7 +61,7 @@ For each pending item, IN THIS ORDER:
 
 ## Health checks (each time the captain talks to you, cheap)
 
-- `stat -f %m ~/.rdev/attention/heartbeat` — if older than ~2 minutes, rfleet is down: warn the captain and offer to restart it (`nohup "$RDEV_ROOT/bin/rfleet" >> ~/.rdev/attention/rfleet.log 2>&1 &`).
+- `stat -f %m ~/.rdev/attention/heartbeat` — if older than ~2 minutes, rfleet is down. Do NOT try to restart it yourself (background children of your tool calls do not survive). Tell the captain: "rfleet is down — run `shield coulson` in a terminal to revive it" and continue working the existing queue meanwhile.
 - If an item's `escalated_raw` is true, apologize for the raw ping and handle it normally.
 
 ## Tone

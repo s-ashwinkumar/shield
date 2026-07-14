@@ -13,13 +13,23 @@ rdev_load_config
 ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
 mkdir -p "$ATT"
 
-# --- 1) Ensure rfleet ---
-if pgrep -f "bin/rfleet" >/dev/null 2>&1; then
-  echo "rfleet: running"
+# --- 1) Ensure rfleet (ground truth = pidfile alive + fresh heartbeat) ---
+RF_ALIVE=false
+if [[ -f "$ATT/rfleet.pid" ]] && kill -0 "$(cat "$ATT/rfleet.pid")" 2>/dev/null; then
+  HB_AGE=999999
+  [[ -f "$ATT/heartbeat" ]] && HB_AGE=$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))
+  if (( HB_AGE < 60 )); then
+    RF_ALIVE=true
+  fi
+fi
+if [[ "$RF_ALIVE" == "true" ]]; then
+  echo "rfleet: running (heartbeat ${HB_AGE}s ago)"
 else
+  [[ -f "$ATT/rfleet.pid" ]] && kill "$(cat "$ATT/rfleet.pid")" 2>/dev/null || true
+  sleep 0.5
   nohup "$SCRIPT_DIR/rfleet" >> "$ATT/rfleet.log" 2>&1 &
   disown
-  echo "rfleet: started (log: $ATT/rfleet.log)"
+  echo "rfleet: started, pid $! (log: $ATT/rfleet.log)"
 fi
 
 # --- 2) Ensure the coulson agent ---
