@@ -31,3 +31,15 @@ Verdict was borrow-don't-adopt; the borrowing is parked here, priority order:
 5. Idle-backoff heartbeat (15s → minutes when fleet quiet).
 Reference clone: re-clone kunchenguid/firstmate when porting (bin/fm-turnend-guard.sh,
 bin/fm-classify-lib.sh, bin/fm-wake-lib.sh, docs/herdr-backend.md).
+
+## 2026-07-14 · Linux portability shim
+~90% of SHIELD is portable by construction (bash+jq+git+gh+claude, markdown agents/
+playbook, JSON queue, python rusage). The macOS crust is four items, all localized:
+terminal-notifier (→ notify-send), launchd plist/launchctl in rcaptain (→ systemd
+user unit, Restart=always), BSD `stat -f %m` (→ GNU `stat -c %Y`), Chrome app path
+in rqa-browser (→ google-chrome/chromium on PATH). Plan: add a platform shim to
+_rdev_lib.sh — rdev_notify(), rdev_mtime(), rdev_chrome_bin(), rdev_install_service()
+— and switch all callers. ~1 day. Real unknowns: herdr on Linux (else rdev-mux needs
+its tmux backend), and the target machine's dev-container setup. Pairs with the
+remote-captain idea: a Linux box running the fleet 24/7, attached via Claude Code
+remote control.
