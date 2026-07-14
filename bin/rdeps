@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# rdeps -- prepare container + share/install dependencies for a worktree.
+#
+# Runs in the stream's COMPANION pane (dispatched by rstream after the
+# coordinator launches) so planning starts immediately while deps install.
+# Writes .claude/rdev/deps.ready when done — the coordinator waits on that
+# marker before running local tests.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+WT="${1:?usage: rdeps <worktree-dir>}"
+[[ -d "$WT" ]] || { echo "rdeps: no such worktree: $WT" >&2; exit 1; }
+
+rm -f "$WT/.claude/rdev/deps.ready"
+echo "rdeps: preparing container (git-path alias + mise trust)..."
+rdev_container_prep "$WT"
+echo "rdeps: sharing/installing dependencies from mainline..."
+rdev_share_deps "$WT"
+mkdir -p "$WT/.claude/rdev"
+date +%s > "$WT/.claude/rdev/deps.ready"
+echo "rdeps: ✅ DONE — dependencies ready ($(basename "$WT"))."

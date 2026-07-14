@@ -246,12 +246,11 @@ if [[ "$RESUMING" == "false" ]]; then
     echo "Enabled project MCP servers for the stream (.claude/settings.local.json)"
   fi
 
-  # --- Prepare container + share deps (worktree mode only; container-centric testing) ---
+  # --- Dependency setup is DEFERRED to the companion pane (see launch section)
+  # so the coordinator opens immediately; rdeps installs while you plan. ---
+  DEPS_DEFERRED=false
   if [[ "$LOCAL" != "true" ]]; then
-    echo "Preparing container (git-path alias + mise trust)..."
-    rdev_container_prep "$WORK_DIR"
-    echo "Sharing dependencies from mainline..."
-    rdev_share_deps "$WORK_DIR"
+    DEPS_DEFERRED=true
   fi
 
   # --- Initialize state ---
@@ -349,6 +348,23 @@ else
   rdev-mux agent-start --name "$NAME" --cwd "$WORK_DIR" --tab "$TAB_ID" -- \
     claude --agent coordinator $PERM_FLAG -n "rdev:$NAME" \
     "Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning."
+fi
+
+# --- Deferred dependency setup: runs in the COMPANION pane so planning starts
+# immediately. rdeps writes .claude/rdev/deps.ready when done; the coordinator
+# waits on that marker before running local tests.
+if [[ "${DEPS_DEFERRED:-false}" == "true" ]]; then
+  SHELL_PANE=""
+  [[ -n "$P0" ]] && SHELL_PANE="$(rdev-mux pane-other --tab "$TAB_ID" --pane "$P0" 2>/dev/null || true)"
+  if [[ -n "$SHELL_PANE" ]]; then
+    rdev-mux pane-run --pane "$SHELL_PANE" --text "rdeps '$WORK_DIR'"
+    echo "Dependency setup running in the companion pane (rdeps — watch for ✅ DONE)"
+  else
+    echo "No companion pane found — running dependency setup inline..."
+    rdev_container_prep "$WORK_DIR"
+    rdev_share_deps "$WORK_DIR"
+    mkdir -p "$WORK_DIR/.claude/rdev"; date +%s > "$WORK_DIR/.claude/rdev/deps.ready"
+  fi
 fi
 
 # Land the user in the new stream tab (coordinator pane is focused).
