@@ -130,9 +130,9 @@ scan_stream() {
 
   # 3) Liveness + stuck prompts (needs herdr)
   if [[ "$NO_PANES" != "1" && "$cur_stage" != "done" && -n "$cur_stage" ]]; then
-    local agent_json
-    agent_json=$("$SCRIPT_DIR/rdev-mux" state --target "rdev:$stream" 2>/dev/null || true)
-    if [[ -z "$agent_json" ]]; then
+    local agent_pane
+    agent_pane=$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)
+    if [[ -z "$agent_pane" ]]; then
       # Not a herdr agent. Legacy rtstream (tmux) streams are alive but
       # invisible to herdr — check tmux before declaring death; legacy
       # streams get state-level routing only (rwatch covers their prompts).
@@ -147,11 +147,17 @@ scan_stream() {
           emit "$stream" "stuck" "Agent waiting on a prompt (legacy tmux, stage: $cur_stage)" "$state"
         fi
       else
-        emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+        # Only flag death for streams this watcher has seen ALIVE (marker),
+        # or whose state changed recently — never for fossil worktrees.
+        local st_age=$(( $(date +%s) - $(stat -f %m "$state" 2>/dev/null || echo 0) ))
+        if [[ -f "$ATT/.cache/${stream}.alive" ]] || (( st_age < ${RFLEET_ADOPT_SEC:-3600} )); then
+          emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+        fi
       fi
     else
+      touch "$ATT/.cache/${stream}.alive"
       local tail
-      tail=$("$SCRIPT_DIR/rdev-mux" read --target "rdev:$stream" --lines 15 2>/dev/null || true)
+      tail=$("$SCRIPT_DIR/rdev-mux" pane-read --pane "$agent_pane" --lines 15 2>/dev/null || true)
       if [[ -n "$tail" ]] && echo "$tail" | grep -qE "$STUCK_RE"; then
         emit "$stream" "stuck" "Agent waiting on a prompt (stage: $cur_stage)" "$state"
       fi
@@ -203,8 +209,10 @@ wakeup() {
   [[ "$SHADOW" == "1" || "$NO_PANES" == "1" ]] && return 0
   (( ${#NEW_ITEMS[@]} > 0 )) || return 0
   local pane msg
-  pane=$("$SCRIPT_DIR/rdev-mux" state --target "$CAPTAIN_AGENT" 2>/dev/null \
-         | jq -r '.result.agent.pane_id // empty' 2>/dev/null || true)
+  local ctab
+  ctab=$("$SCRIPT_DIR/rdev-mux" tab-find --name coulson 2>/dev/null || true)
+  pane=""
+  [[ -n "$ctab" ]] && pane=$("$SCRIPT_DIR/rdev-mux" agent-tab --tab "$ctab" 2>/dev/null || true)
   if [[ -z "$pane" ]]; then
     log "no captain pane — wake-up skipped (${#NEW_ITEMS[@]} item(s) pending; dead-man armed)"
     return 0

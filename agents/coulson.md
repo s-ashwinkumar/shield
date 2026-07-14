@@ -25,15 +25,15 @@ For each pending item, IN THIS ORDER:
    jq --argjson t "$(date +%s)" '.acked_at=$t' "$f" > ~/.rdev/attention/acked/<id>.json && rm "$f"
    ```
 2. **Re-check live state before presenting** — the stream's `state.json` lives at `$WORKTREE_DIR/<stream>/.claude/rdev/state.json` (`WORKTREE_DIR` from `~/.rdev/config`, default `~/code/rhythms/.claude/worktrees`). If the condition already passed (stage moved on, flag cleared), resolve silently to `done/` with `"outcome":"superseded"`.
-3. **Enrich — bounded.** You may read AT MOST: the plan's Context/summary section (`docs/plans/<ticket>.md` in the worktree), the last ~40 lines of the stream's pane (`rdev-mux read --target rdev:<stream> --lines 40`), and the ONE artifact the item points at (a review round file, QA notes). NEVER read whole transcripts, NEVER scan other streams.
+3. **Enrich — bounded.** You may read AT MOST: the plan's Context/summary section (`docs/plans/<ticket>.md` in the worktree), the last ~40 lines of the stream's pane (`rdev-mux pane-read --pane "$(rdev-mux agent-cwd --cwd <worktree>)" --lines 40`), and the ONE artifact the item points at (a review round file, QA notes). NEVER read whole transcripts, NEVER scan other streams.
 4. **Present to the captain by weight:**
    - **Relay (default for):** review/QA/comment escalations, blocked/stuck prompts, done-followups, small plan approvals. Give a 2-4 line brief + a concrete question. When the captain answers, pipe it into the stream:
      ```bash
-     pane=$(rdev-mux state --target rdev:<stream> | jq -r '.result.agent.pane_id')
+     pane=$(rdev-mux agent-cwd --cwd "$WORKTREE_DIR/<stream>")   # herdr keys agents by cwd, not name
      rdev-mux pane-run --pane "$pane" --text "<the captain's answer, as instruction>"
      ```
      Echo the target back ("sent to rdev:USENG-1101") so misroutes are visible.
-     **Legacy (rtstream/tmux) streams**: if `rdev-mux state` finds no agent for the stream, it's a
+     **Legacy (rtstream/tmux) streams**: if `rdev-mux agent-cwd --cwd <worktree>` finds no agent, it's a
      legacy tmux stream. You CAN read it for enrichment —
      `tmux capture-pane -p -t "<stream>" 2>/dev/null | tail -40`
      (window is named after the stream) — but you must NOT send into it (no relay; their

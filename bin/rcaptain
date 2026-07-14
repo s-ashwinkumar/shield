@@ -23,7 +23,9 @@ else
 fi
 
 # --- 2) Ensure the coulson agent ---
-EXISTING="$(rdev-mux state --target rdev:coulson 2>/dev/null | jq -r '.result.agent.pane_id // empty' 2>/dev/null || true)"
+CTAB="$(rdev-mux tab-find --name coulson 2>/dev/null || true)"
+EXISTING=""
+[[ -n "$CTAB" ]] && EXISTING="$(rdev-mux agent-tab --tab "$CTAB" 2>/dev/null || true)"
 if [[ -n "$EXISTING" ]]; then
   echo "coulson: already running (pane $EXISTING)"
   echo ""

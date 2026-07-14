@@ -89,6 +89,12 @@ case "$verb" in
   send)        _parse "$@"; _mux_run herdr agent send "$target" "$text" ;;
   read)        _parse "$@"; _mux_run herdr agent read "$target" --source visible --lines "${lines:-20}" ;;
   state)       _parse "$@"; _mux_run herdr agent get "$target" ;;
+  # herdr keys agents by pane/cwd, NOT by our claude -n session names.
+  agent-cwd)   _parse "$@"; _mux_run herdr agent list \
+                 | _jq --arg c "$cwd" 'first(.result.agents[]|select(.cwd==$c or .foreground_cwd==$c)|.pane_id)//empty' ;;
+  agent-tab)   _parse "$@"; _mux_run herdr agent list \
+                 | _jq --arg t "$tab" 'first(.result.agents[]|select(.tab_id==$t)|.pane_id)//empty' ;;
+  pane-read)   _parse "$@"; _mux_run herdr pane read "$pane" --source visible --lines "${lines:-20}" ;;
   kill)        _parse "$@"; _mux_run herdr tab close "$tab" ;;
   *) echo "rdev-mux: unknown verb '$verb'" >&2; exit 2 ;;
 esac
