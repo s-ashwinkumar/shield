@@ -36,6 +36,7 @@ if [[ -n "${RFLEET_SCAN_DIR:-}" ]]; then
 else
   source "$SCRIPT_DIR/_rdev_lib.sh"
   rdev_load_config
+  set +e  # _rdev_lib.sh enables -e at source time; a watcher must outlive failed probes
   SCAN_DIR="$WORKTREE_DIR"
 fi
 

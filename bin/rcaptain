@@ -13,23 +13,44 @@ rdev_load_config
 ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
 mkdir -p "$ATT"
 
-# --- 1) Ensure rfleet (ground truth = pidfile alive + fresh heartbeat) ---
-RF_ALIVE=false
-if [[ -f "$ATT/rfleet.pid" ]] && kill -0 "$(cat "$ATT/rfleet.pid")" 2>/dev/null; then
-  HB_AGE=999999
-  [[ -f "$ATT/heartbeat" ]] && HB_AGE=$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))
-  if (( HB_AGE < 60 )); then
-    RF_ALIVE=true
-  fi
+# --- 1) Ensure rfleet under launchd (KeepAlive: survives shells, restarts on crash) ---
+PLIST="$HOME/Library/LaunchAgents/com.shield.rfleet.plist"
+LABEL="com.shield.rfleet"
+if [[ ! -f "$PLIST" ]] || ! grep -q "$SCRIPT_DIR/rfleet" "$PLIST" 2>/dev/null; then
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$PLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key><array><string>$SCRIPT_DIR/rfleet</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$ATT/rfleet.log</string>
+  <key>StandardErrorPath</key><string>$ATT/rfleet.log</string>
+</dict></plist>
+PL
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  echo "rfleet: installed launchd service ($PLIST)"
 fi
-if [[ "$RF_ALIVE" == "true" ]]; then
-  echo "rfleet: running (heartbeat ${HB_AGE}s ago)"
+if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+  :
 else
-  [[ -f "$ATT/rfleet.pid" ]] && kill "$(cat "$ATT/rfleet.pid")" 2>/dev/null || true
-  sleep 0.5
-  nohup "$SCRIPT_DIR/rfleet" >> "$ATT/rfleet.log" 2>&1 &
-  disown
-  echo "rfleet: started, pid $! (log: $ATT/rfleet.log)"
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null || true
+fi
+sleep 2
+HB_AGE=999999
+[[ -f "$ATT/heartbeat" ]] && HB_AGE=$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))
+if (( HB_AGE < 60 )); then
+  echo "rfleet: running under launchd (heartbeat ${HB_AGE}s ago)"
+else
+  launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  sleep 2
+  [[ -f "$ATT/heartbeat" ]] && HB_AGE=$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))
+  echo "rfleet: launchd kickstarted (heartbeat ${HB_AGE}s ago; log: $ATT/rfleet.log)"
 fi
 
 # --- 2) Ensure the coulson agent ---
