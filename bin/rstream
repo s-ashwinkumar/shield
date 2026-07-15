@@ -340,6 +340,16 @@ fi
 
 # Launch coordinator in the LEFT pane (fresh each run; it reads state.json to resume).
 # Tracked via the global claude hook; Herdr owns state display + notifications.
+# FOOTGUN GUARD: never type a launch command into a pane that holds a LIVE
+# agent — it lands as chat input in the running session and wrecks it.
+LIVE_PANE="$(rdev-mux agent-cwd --cwd "$WORK_DIR" 2>/dev/null || true)"
+if [[ -n "$LIVE_PANE" ]]; then
+  echo "Stream '$NAME' already has a LIVE agent (pane $LIVE_PANE)."
+  echo "Not launching a second one. To talk to it, type in its pane (or have coulson relay)."
+  echo "To force a fresh session: close that tab first (herdr tab close), then re-run."
+  exit 0
+fi
+
 COORD_CMD="claude --agent coordinator $PERM_FLAG -n rdev:$NAME 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'"
 if [[ -n "$P0" ]]; then
   rdev-mux pane-run --pane "$P0" --text "$COORD_CMD"
