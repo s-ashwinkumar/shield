@@ -75,8 +75,17 @@ Every plan, either size, contains:
 ## Exit — hard gate
 
 **A human-approved plan must exist before Build starts.** The gate is a
-state condition, not necessarily a live conversation — it can be satisfied
-three ways:
+state condition, not necessarily a live conversation.
+
+**Raise the gate when — and only when — the plan is ready.** Once the plan
+file is written and you are presenting it for approval (paths 1 and 3 below),
+run `rgate <name>`. This flags the stream's state so the fleet watcher raises
+exactly one `plan_gate` attention item for the captain. Do **not** rely on
+entering the plan stage to notify anyone — streams are born in `stage: plan`,
+so only `rgate` marks a plan as genuinely ready. Skip `rgate` for the
+pre-approved (2) and spec-as-approval (4) paths, which proceed without waiting.
+
+It can be satisfied four ways:
 
 1. **Interactive**: the plan is drafted and approved live in the session
    (the common case for a person driving a tool).

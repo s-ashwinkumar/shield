@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# rgate -- Raise the plan-ready approval gate for a stream.
+#
+# The coordinator runs this once the plan file is written and it is presenting
+# the plan for human approval. It flags .attention on the stream state, which
+# rfleet turns into a single plan_gate attention item. This replaces the old
+# behavior where rfleet fired plan_gate on mere entry into the plan stage
+# (every stream tripped it at launch, before any plan existed).
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rgate <name> [--summary <text>]
+
+Raise the plan-ready approval gate for a stream. Run this when the plan file
+is written and you are presenting it for approval.
+
+Arguments:
+  name                Stream name (ticket ID)
+
+Options:
+  --summary <text>    Attention summary (default: "Plan ready for approval")
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+NAME=""
+SUMMARY=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --summary) SUMMARY="$2"; shift 2 ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) NAME="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$NAME" ]]; then
+  echo "Error: stream name required"
+  usage
+fi
+
+STAGE=$(rdev_get_stage "$NAME")
+if [[ "$STAGE" != "plan" ]]; then
+  echo "Error: stream '$NAME' is in stage '$STAGE', expected 'plan'."
+  echo "rgate raises the plan approval gate and only applies during planning."
+  exit 1
+fi
+
+# rfleet's attention path appends " (<ticket>)" to the summary, so keep the
+# default bare to avoid doubling it.
+: "${SUMMARY:=Plan ready for approval}"
+
+rdev_signal_attention "$NAME" "plan_gate" "$SUMMARY"
+
+echo "Plan gate raised for '$NAME'. The captain will be notified."

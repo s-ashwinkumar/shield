@@ -145,9 +145,11 @@ scan_stream() {
   ticket=$(jq -r '.ticket // ""' "$state")
 
   # 1) Stage transitions
-  if [[ "$cur_stage" == "plan" && "$prev_stage" != "plan" ]]; then
-    emit "$stream" "plan_gate" "Plan ready for approval (${ticket:-$stream})" "$state"
-  fi
+  # NOTE: plan_gate is intentionally NOT emitted on entry into the plan stage.
+  # Streams are born with stage=plan (see rdev_init_state), so an entry-based
+  # gate fires at launch, before any plan exists. The coordinator raises the
+  # gate itself via `rgate` (state.attention) once the plan is ready — handled
+  # by the coordinator-flagged attention path below.
   if [[ "$cur_stage" == "done" && "$prev_stage" != "done" ]]; then
     local demo dev1 extra=""
     demo=$(jq -r '.demo_required // false' "$state")

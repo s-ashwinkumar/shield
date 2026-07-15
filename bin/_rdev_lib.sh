@@ -323,6 +323,23 @@ rdev_update_state() {
   echo "$tmp" > "$state_file"
 }
 
+# rdev_signal_attention <name> <type> <summary>
+# Raise a coordinator-flagged attention signal on the stream's state file.
+# rfleet's scan picks up the changed .attention.ts and emits one item.
+# This is the ONLY way a plan_gate should be raised — on a genuinely
+# ready-for-approval plan, never on mere entry into the plan stage.
+rdev_signal_attention() {
+  local name="$1" type="$2" summary="$3"
+  local state_file
+  state_file="$(rdev_state_file "$name")"
+  [[ -f "$state_file" ]] || { echo "rdev_signal_attention: no state file for '$name'" >&2; return 1; }
+  local now; now=$(date +%s)
+  local tmp
+  tmp=$(jq --arg t "$type" --arg s "$summary" --argjson ts "$now" \
+          '.attention = {type:$t, summary:$s, ts:$ts}' "$state_file") || return 1
+  echo "$tmp" > "$state_file"
+}
+
 rdev_init_state() {
   local name="$1"
   local ticket="$2"
