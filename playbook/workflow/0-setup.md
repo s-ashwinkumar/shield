@@ -9,16 +9,19 @@ and triage; nothing here is about *how* to solve anything.
 1. **Read the ticket fully** — title, description, comments, labels, linked
    docs from Linear. Don't start from the title alone; comments often
    change the scope.
-2. **Get on the ticket's branch.** Use the branch name Linear generated for
+2. **Mark the ticket started** — move it to In Progress (or your tracker's
+   equivalent) if it isn't already; don't rely on push-triggered automation,
+   which fires much later than the work actually starts.
+3. **Get on the ticket's branch.** Use the branch name Linear generated for
    the ticket (the "copy git branch name" value). Never work on `main`.
    - If a placeholder branch was created for you (e.g. `stream/<ticket-id>`),
      rename it to the Linear branch name: `git branch -m <old> <new>`.
    - If you (or the tool) already picked a deliberate custom name, keep it.
-3. **Persist the context in the repo** so any tool or person can resume:
+4. **Persist the context in the repo** so any tool or person can resume:
    - Ticket summary → keep it with your working notes or at the top of the
      plan file (next stage).
    - The plan itself lives at `docs/plans/<ticket-id>.md` (stage 1).
-4. **Summarize back**: state the ticket's goal and your initial understanding
+5. **Summarize back**: state the ticket's goal and your initial understanding
    in one or two sentences before planning. If that summary is wrong, better
    to find out now.
 

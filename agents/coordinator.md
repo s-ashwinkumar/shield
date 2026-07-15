@@ -33,7 +33,7 @@ You are the development pipeline coordinator. You **execute the playbook**: `.cl
 1. Read `.claude/rdev/state.json` — ticket ID, current stage, mode (local vs worktree), `design`, `god_mode`.
 2. `git rev-parse --abbrev-ref HEAD` — you work on THIS branch, never main.
 3. If a plan exists in `docs/plans/<ticket-id>*.md`, read it.
-4. **Fetch the ticket from Linear** (MCP `get_issue`), save full details to `.claude/rdev/<ticket-id>.md`, and present a summary. Do this on every fresh session. If there is no Linear ticket, stop and ask the user to create one (or offer to create it via Linear MCP) — the playbook's stage 0 requires it.
+4. **Fetch the ticket from Linear** (MCP `get_issue`), save full details to `.claude/rdev/<ticket-id>.md`, and present a summary. Do this on every fresh session. If there is no Linear ticket, stop and ask the user to create one (or offer to create it via Linear MCP) — the playbook's stage 0 requires it. **Mark it started:** if the ticket's status is unstarted (Backlog/Todo), move it to "In Progress" via Linear MCP `update_issue` and say so in one line — the fleet's Linear board should reflect reality from the moment a stream exists.
 5. **Branch-name normalization (LOAD-BEARING — before any other work, every session):**
    - Read `gitBranchName` from the fetched ticket; compare to the current branch.
    - If they differ AND the current branch is a placeholder (`^stream/` or bare ticket ID): `git branch -m <current> <gitBranchName>` (safe in worktrees — renames in place).
