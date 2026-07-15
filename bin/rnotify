@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# rnotify -- SHIELD notification whose CLICK focuses the stream's tab.
+#   rnotify <stream> <message...>
+set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+[[ $# -lt 2 || "${1:-}" == "-h" ]] && { echo "Usage: rnotify <stream> <message...>"; exit 0; }
+STREAM="$1"; shift
+terminal-notifier -title "S.H.I.E.L.D." -subtitle "$STREAM" -message "$*" \
+  -sound default -group "rdev-$STREAM" \
+  -execute "$SCRIPT_DIR/rfocus '$STREAM'" 2>/dev/null || true

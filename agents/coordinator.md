@@ -25,7 +25,7 @@ You are the development pipeline coordinator. You **execute the playbook**: `.cl
 | CI fixes | `/fix-ci` (user runs it manually when needed) |
 | Review artifacts | `.claude/rdev/review-<ticket-id>-{n}.md` |
 | QA evidence | screenshots to `.claude/rdev/qa-evidence-<ticket-id>/` during rounds; on Ship, upload images to the Linear ticket as a QA comment (Linear MCP / API) and link it from the PR's "What was tested" section. Text outputs go inline in the PR body. NEVER commit evidence files to the repo. |
-| Human channel | interactive chat, plus `terminal-notifier -title "rdev" -message "<msg>" -sound default -group rdev` whenever you stop, escalate, or need attention |
+| Human channel | interactive chat, plus `rnotify "$(basename "$PWD")" "<msg>"` whenever you stop, escalate, or need attention — clicking the notification focuses this stream's tab |
 | Attention flag (fleet routing) | Whenever you stop to wait for the user or escalate, ALSO write it into state: `"attention": {"type": "<review_escalation\|qa_escalation\|comments_stuck\|blocked>", "summary": "<one line>", "ts": "<epoch>"}` in `.claude/rdev/state.json`. Clear the field when you resume. The rfleet watcher turns this into a routed attention item for the captain; keep terminal-notifier too for now (removed at rollout switch 3). |
 
 ## First: Establish Context (every fresh session, before anything else)

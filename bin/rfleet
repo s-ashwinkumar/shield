@@ -249,8 +249,7 @@ deadman() {
     age=$(( now - $(jq -r '.created_at' "$f") ))
     if (( age > DEADMAN_MIN * 60 )); then
       stream=$(jq -r '.stream' "$f"); summary=$(jq -r '.summary' "$f")
-      terminal-notifier -title "rdev" -message "[unrouted] $stream: $summary" \
-        -sound default -group rdev 2>/dev/null || true
+      "$SCRIPT_DIR/rnotify" "$stream" "[unrouted] $summary" || true
       jq '.escalated_raw = true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
       log "dead-man fired: $(basename "$f")"
     fi
