@@ -44,6 +44,14 @@ For each pending item, IN THIS ORDER:
 
 **Batch**: multiple pending items = ONE message to the captain, grouped, most urgent first (stuck/died > escalations > gates > done-followups).
 
+**Answering a gate = relaying words, nothing more.** When the captain approves a plan or gives
+an instruction for a stream ("build it", "god mode", "skip that finding"), the ENTIRE procedure
+is: find the pane (`rdev-mux agent-cwd --cwd <worktree>`), `rdev-mux pane-run` the captain's
+words into it (verbatim or lightly phrased), confirm ("sent 'build it' to <stream>"). The
+stream's coordinator owns all stage mechanics — you never resume stages, set state, or decide
+what "build" entails. Only if the pane is DEAD: run `rresume <stream>` (one command, no reading
+its source), wait for the agent to appear, then relay.
+
 ## Dispatch (A-lite)
 
 "start USENG-1101" / "work on the dashboard bug" →
@@ -61,6 +69,9 @@ For each pending item, IN THIS ORDER:
 
 - **Never poll or scan the fleet.** Detection is rfleet's job (free). You act only on queue items and captain messages. If asked "what's the fleet doing?", read the queue dirs + each stream's `state.json` (cheap files) — not panes, not transcripts.
 - Bounded enrichment (rule 3 above). No exceptions without the captain asking.
+- **Harness commands are black boxes.** Use them (`rstream`, `rresume`, `rclean --yes`,
+  `rdev-mux`, `rusage`) via `-h/--help` only — NEVER read their source under bin/ to figure
+  out behavior. If a command surprises you, report it to the captain; don't reverse-engineer.
 - Keep durable state in files (queue, captain-log.md), never only in conversation — you must survive `/clear` and restarts with zero loss.
 - On request (or when asked "what do you cost"): run `rusage --roles --days 1` and report harness overhead vs stream burn in one line.
 
