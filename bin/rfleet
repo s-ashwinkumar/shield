@@ -160,7 +160,7 @@ scan_stream() {
   fi
 
   # 3) Liveness + stuck prompts (needs herdr)
-  if [[ "$NO_PANES" != "1" && "$cur_stage" != "done" && -n "$cur_stage" ]]; then
+  if [[ "$NO_PANES" != "1" && "${REGISTRY_OK:-1}" == "1" && "$cur_stage" != "done" && -n "$cur_stage" ]]; then
     local agent_pane
     agent_pane=$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)
     if [[ -z "$agent_pane" ]]; then
@@ -217,7 +217,7 @@ auto_cancel() {
     case "$type" in
       plan_gate)  [[ "$cur_stage" != "plan" ]] && cancel "$f" "superseded" ;;
       died) # self-heal: agent back alive -> item is stale
-            if [[ "$NO_PANES" != "1" ]] && [[ -n "$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)" ]]; then
+            if [[ "$NO_PANES" != "1" && "${REGISTRY_OK:-1}" == "1" ]] && [[ -n "$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)" ]]; then
               cancel "$f" "agent back alive"
             fi ;;
       stuck) : ;;  # cleared by ack; liveness re-emits if still true
@@ -267,6 +267,17 @@ wakeup() {
 
 scan() {
   NEW_ITEMS=()
+  # Registry probe: if herdr is unreachable/empty from THIS process, skip all
+  # liveness logic this scan (absence of evidence != death) and say so once.
+  REGISTRY_OK=1
+  if [[ "$NO_PANES" != "1" ]]; then
+    local nagents
+    nagents=$("$SCRIPT_DIR/rdev-mux" list 2>>"$ATT/probe.err" | jq -r '.result.agents | length' 2>>"$ATT/probe.err")
+    if [[ -z "$nagents" || "$nagents" == "0" ]]; then
+      REGISTRY_OK=0
+      log "herdr registry unreachable/empty from watcher (agents=${nagents:-ERR}) — liveness skipped this scan"
+    fi
+  fi
   local wt
   for wt in "$SCAN_DIR"/*/; do
     [[ -d "$wt" ]] && scan_stream "${wt%/}"
