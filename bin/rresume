@@ -296,6 +296,10 @@ if [[ -n "$P0" ]]; then
     echo "To force a fresh session: close that tab first (herdr tab close), then re-run."
     exit 0
   fi
+  STATE_F="$WORK_DIR/.claude/rdev/state.json"
+  if [[ -f "$STATE_F" ]]; then
+    jq --arg p "$P0" '.herdr = (.herdr // {}) + {pane: $p}' "$STATE_F" > "$STATE_F.tmp" && mv "$STATE_F.tmp" "$STATE_F"
+  fi
   rdev-mux pane-run --pane "$P0" --text "cd $WORK_DIR && claude --agent coordinator $PERM_FLAG -n rdev:$NAME; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true"
 fi
 rdev-mux tab-focus --tab "$TAB_ID" >/dev/null 2>&1 || true

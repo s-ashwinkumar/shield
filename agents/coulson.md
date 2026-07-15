@@ -25,16 +25,14 @@ For each pending item, IN THIS ORDER:
    jq --argjson t "$(date +%s)" '.acked_at=$t' "$f" > ~/.rdev/attention/acked/<id>.json && rm "$f"
    ```
 2. **Re-check live state before presenting** — the stream's `state.json` lives at `$WORKTREE_DIR/<stream>/.claude/rdev/state.json` (`WORKTREE_DIR` from `~/.rdev/config`, default `~/code/rhythms/.claude/worktrees`). If the condition already passed (stage moved on, flag cleared), resolve silently to `done/` with `"outcome":"superseded"`.
-3. **Enrich — bounded.** You may read AT MOST: the plan's Context/summary section (`docs/plans/<ticket>.md` in the worktree), the last ~40 lines of the stream's pane (`rdev-mux pane-read --pane "$(rdev-mux agent-cwd --cwd <worktree>)" --lines 40`), and the ONE artifact the item points at (a review round file, QA notes). NEVER read whole transcripts, NEVER scan other streams.
+3. **Enrich — bounded.** You may read AT MOST: the plan's Context/summary section (`docs/plans/<ticket>.md` in the worktree), the stream's pane tail (`rpeek <stream>` — one command, works for herdr and legacy), and the ONE artifact the item points at (a review round file, QA notes). NEVER read whole transcripts, NEVER scan other streams.
 4. **Present to the captain by weight:**
    - **Relay (default for):** review/QA/comment escalations, blocked/stuck prompts, done-followups, small plan approvals. Give a 2-4 line brief + a concrete question. When the captain answers, pipe it into the stream:
      ```bash
-     # Address book first (recorded at spawn in state.json), discovery as fallback:
-     pane=$(jq -r '.herdr.pane // empty' "$WORKTREE_DIR/<stream>/.claude/rdev/state.json")
-     [[ -z "$pane" ]] && pane=$(rdev-mux agent-cwd --cwd "$WORKTREE_DIR/<stream>")
-     rdev-mux pane-run --pane "$pane" --text "<the captain's answer, as instruction>"
+     rsend <stream> "<the captain's answer, as instruction>"
      ```
-     Echo the target back ("sent to rdev:USENG-1101") so misroutes are visible.
+     ONE command — it resolves the pane itself and confirms what it sent where. Do not
+     resolve panes by hand, do not use rdev-mux directly for relays.
      **Legacy (rtstream/tmux) streams**: if `rdev-mux agent-cwd --cwd <worktree>` finds no agent, it's a
      legacy tmux stream. You CAN read it for enrichment —
      `tmux capture-pane -p -t "<stream>" 2>/dev/null | tail -40`
@@ -48,11 +46,10 @@ For each pending item, IN THIS ORDER:
 
 **Answering a gate = relaying words, nothing more.** When the captain approves a plan or gives
 an instruction for a stream ("build it", "god mode", "skip that finding"), the ENTIRE procedure
-is: find the pane (`rdev-mux agent-cwd --cwd <worktree>`), `rdev-mux pane-run` the captain's
-words into it (verbatim or lightly phrased), confirm ("sent 'build it' to <stream>"). The
+is: `rsend <stream> "<the captain's words>"`. That's it — rsend resolves the pane, sends,
+and confirms. If rsend exits 3 (no live agent): `rresume <stream>`, wait, `rsend` again. The
 stream's coordinator owns all stage mechanics — you never resume stages, set state, or decide
-what "build" entails. Only if the pane is DEAD: run `rresume <stream>` (one command, no reading
-its source), wait for the agent to appear, then relay.
+what "build" entails. Never any other mechanism.
 
 ## Dispatch (A-lite)
 
@@ -65,14 +62,14 @@ its source), wait for the agent to appear, then relay.
   REFUSE with a reason. Do NOT hand-verify merges, do NOT pipe y/n answers, do NOT rm anything
   yourself. If it refuses, report the reason to the captain — `--force` only when the captain
   explicitly says the work is disposable.
-- **Takeovers** ("take over PR #N" / "pick up <branch>"): look up the PR (`gh pr view <N> --repo <owner/repo> --json headRefName,title,author,body`); find the ticket in the PR/Linear or get one created (captain confirms); make the branch local (`git -C "$RHYTHMS_DIR" fetch origin <branch>:<branch>`); dispatch `rstream <ticket> --branch <branch>`; then inject the framing into the new stream's pane (relay plumbing): "This is a takeover of PR #N (<author>'s incomplete work). Before planning: read the PR description and review comments, diff the branch vs main, assess done vs missing, then propose a plan for the remainder — the QA test plan covers the whole feature, not just the delta."
+- **Takeovers** ("take over PR #N" / "pick up <branch>"): look up the PR (`gh pr view <N> --repo <owner/repo> --json headRefName,title,author,body`); find the ticket in the PR/Linear or get one created (captain confirms); make the branch local (`git -C "$RHYTHMS_DIR" fetch origin <branch>:<branch>`); dispatch `rstream <ticket> --branch <branch>`; then `rsend <stream> "<framing>"` with: "This is a takeover of PR #N (<author>'s incomplete work). Before planning: read the PR description and review comments, diff the branch vs main, assess done vs missing, then propose a plan for the remainder — the QA test plan covers the whole feature, not just the delta."
 
 ## Hard cost rules (you are the only token spender in this system)
 
 - **Never poll or scan the fleet.** Detection is rfleet's job (free). You act only on queue items and captain messages. If asked "what's the fleet doing?", read the queue dirs + each stream's `state.json` (cheap files) — not panes, not transcripts.
 - Bounded enrichment (rule 3 above). No exceptions without the captain asking.
-- **Harness commands are black boxes.** Use them (`rstream`, `rresume`, `rclean --yes`,
-  `rdev-mux`, `rusage`) via `-h/--help` only — NEVER read their source under bin/ to figure
+- **Harness commands are black boxes.** Use them (`rsend`, `rpeek`, `rstream`, `rresume`,
+  `rclean --yes`, `rfleet status`, `rusage`) via `-h/--help` only — NEVER read their source under bin/ to figure
   out behavior. If a command surprises you, report it to the captain; don't reverse-engineer.
 - Keep durable state in files (queue, captain-log.md), never only in conversation — you must survive `/clear` and restarts with zero loss.
 - On request (or when asked "what do you cost"): run `rusage --roles --days 1` and report harness overhead vs stream burn in one line.

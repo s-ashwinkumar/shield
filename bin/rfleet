@@ -179,14 +179,22 @@ scan_stream() {
         fi
       else
         # Only flag death for streams this watcher has seen ALIVE (marker),
-        # or whose state changed recently — never for fossil worktrees.
+        # or whose state changed recently — never for fossil worktrees. And
+        # DEBOUNCE: agents blink out of the registry during turn transitions,
+        # so require RFLEET_DIED_MISSES consecutive missed polls (default 2).
         local st_age=$(( $(date +%s) - $(stat -f %m "$state" 2>/dev/null || echo 0) ))
         if [[ -f "$ATT/.cache/${stream}.alive" ]] || (( st_age < ${RFLEET_ADOPT_SEC:-3600} )); then
-          emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+          local misses=0 missf="$ATT/.cache/${stream}.misses"
+          [[ -f "$missf" ]] && misses=$(cat "$missf")
+          misses=$(( misses + 1 )); echo "$misses" > "$missf"
+          if (( misses >= ${RFLEET_DIED_MISSES:-2} )); then
+            emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
+          fi
         fi
       fi
     else
       touch "$ATT/.cache/${stream}.alive"
+      rm -f "$ATT/.cache/${stream}.misses"
       local tail
       tail=$("$SCRIPT_DIR/rdev-mux" pane-read --pane "$agent_pane" --lines 15 2>/dev/null || true)
       if [[ -n "$tail" ]] && echo "$tail" | grep -qE "$STUCK_RE"; then
@@ -208,7 +216,11 @@ auto_cancel() {
     cur_stage=$(jq -r '.stage // ""' "$state")
     case "$type" in
       plan_gate)  [[ "$cur_stage" != "plan" ]] && cancel "$f" "superseded" ;;
-      stuck|died) : ;;  # cleared by ack; liveness re-emits if still true
+      died) # self-heal: agent back alive -> item is stale
+            if [[ "$NO_PANES" != "1" ]] && [[ -n "$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)" ]]; then
+              cancel "$f" "agent back alive"
+            fi ;;
+      stuck) : ;;  # cleared by ack; liveness re-emits if still true
       done_followups) : ;;
       *) # coordinator-flagged types: cancel when the flag was cleared
          att_ts=$(jq -r '.attention.ts // ""' "$state")

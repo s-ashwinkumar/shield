@@ -16,6 +16,8 @@ case "$sub" in
   forward)  exec "$SCRIPT_DIR/rforward"    "$@" ;;
   resume)   exec "$SCRIPT_DIR/rresume"     "$@" ;;
   clean)    exec "$SCRIPT_DIR/rclean"      "$@" ;;
+  send)     exec "$SCRIPT_DIR/rsend"       "$@" ;;
+  peek)     exec "$SCRIPT_DIR/rpeek"       "$@" ;;
   mux)      exec "$SCRIPT_DIR/rdev-mux"    "$@" ;;
   help|--help|-h|*)
     cat <<'EOF'
@@ -27,6 +29,8 @@ S.H.I.E.L.D. — Strategic Herding, Intervention, Escalation & LLM Dispatch
   shield status            fleet at a glance
   shield usage [--roles]   token/cost accounting (counterfactual, not a bill)
   shield browser           ensure the shared QA Chrome (:9222)
+  shield send <stream> <msg>          relay a message into a stream's live agent
+  shield peek <stream> [n]            read the tail of a stream's pane
   shield build|forward|resume|clean   stream lifecycle
   shield mux <verb>        substrate adapter (herdr)
 

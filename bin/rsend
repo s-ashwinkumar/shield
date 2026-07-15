@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# rsend -- relay a message into a stream's LIVE agent session. ONE command.
+#
+#   rsend <stream> <message...>
+#
+# Resolves the pane itself (live registry first, recorded address fallback),
+# types the message + Enter into the running session, confirms. Exits 3 if
+# there is no live agent (start/resume the stream first) — it never launches
+# anything and never types into a dead pane.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+set +e  # lib enables -e; we handle our own errors
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 2 ]]; then
+  echo "Usage: rsend <stream> <message...>   (relay into the stream's live agent)"
+  exit 0
+fi
+
+STREAM="$1"; shift
+MSG="$*"
+WT="$WORKTREE_DIR/$STREAM"
+[[ -d "$WT" ]] || { echo "rsend: no such stream worktree: $STREAM" >&2; exit 2; }
+
+# Live registry is the truth; recorded spawn address is the fallback.
+PANE="$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$WT" 2>/dev/null)"
+if [[ -z "$PANE" ]]; then
+  PANE="$(jq -r '.herdr.pane // empty' "$WT/.claude/rdev/state.json" 2>/dev/null)"
+fi
+if [[ -z "$PANE" ]]; then
+  echo "rsend: no live agent for '$STREAM' — resume it first (rresume $STREAM), then rsend again." >&2
+  exit 3
+fi
+
+if ! "$SCRIPT_DIR/rdev-mux" pane-run --pane "$PANE" --text "$MSG" >/dev/null 2>&1; then
+  echo "rsend: send failed (pane $PANE)" >&2
+  exit 4
+fi
+echo "rsend: ✅ sent to $STREAM (pane $PANE): \"$MSG\""

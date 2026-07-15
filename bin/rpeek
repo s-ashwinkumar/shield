@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# rpeek -- read the last N lines of a stream's live agent pane. ONE command.
+#
+#   rpeek <stream> [lines=40]
+#
+# Herdr streams via the registry; legacy tmux streams via capture-pane.
+# Read-only, always terminates.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+set +e
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 1 ]]; then
+  echo "Usage: rpeek <stream> [lines=40]   (read the tail of the stream's pane)"
+  exit 0
+fi
+
+STREAM="$1"; LINES="${2:-40}"
+WT="$WORKTREE_DIR/$STREAM"
+[[ -d "$WT" ]] || { echo "rpeek: no such stream worktree: $STREAM" >&2; exit 2; }
+
+PANE="$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$WT" 2>/dev/null)"
+if [[ -n "$PANE" ]]; then
+  "$SCRIPT_DIR/rdev-mux" pane-read --pane "$PANE" --lines "$LINES"
+  exit $?
+fi
+
+# Legacy tmux fallback (read-only)
+TPANE=$(tmux list-panes -a -F "#{pane_current_path} #{pane_id}" 2>/dev/null \
+        | awk -v p="$WT" '$1==p {print $2; exit}')
+if [[ -n "$TPANE" ]]; then
+  tmux capture-pane -p -t "$TPANE" 2>/dev/null | tail -"$LINES"
+  exit 0
+fi
+
+echo "rpeek: no live agent for '$STREAM' (herdr or tmux)" >&2
+exit 3
