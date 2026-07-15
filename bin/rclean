@@ -7,14 +7,18 @@ rdev_load_config
 
 usage() {
   cat <<EOF
-Usage: rclean <name>
+Usage: rclean <name> [--yes] [--force]
 
 Clean up a workstream: unpromote if needed, remove worktree and close the Herdr tab.
+SAFE BY DEFAULT: refuses to remove a worktree with uncommitted changes or unpushed
+commits (unless --force). Non-interactive with --yes (agents: always use --yes).
 
 Arguments:
   name    Stream name (ticket ID)
 
 Options:
+  --yes, -y           Non-interactive: skip prompts, delete the merged branch
+  --force             Remove even with uncommitted/unpushed work (destructive)
   --session <name>    tmux session (default: current session)
   -h, --help          Show this help
 EOF
@@ -23,10 +27,14 @@ EOF
 
 NAME=""
 SESSION_FLAG=""
+YES=false
+FORCE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage ;;
+    --yes|-y) YES=true; shift ;;
+    --force) FORCE=true; shift ;;
     --session) SESSION_FLAG="$2"; shift 2 ;;
     -*) echo "Unknown option: $1"; usage ;;
     *) NAME="$1"; shift ;;
@@ -44,6 +52,42 @@ STATE=$(rdev_read_state "$NAME")
 MODE=$(echo "$STATE" | jq -r '.mode // "worktree"')
 BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "stream/$NAME")
 
+# --- Safety: never silently destroy unlanded work (bypass with --force) ---
+# A stream whose PR is MERGED is safe by definition (squash-merges won't match
+# by SHA, so commit-counting would false-positive on the common case).
+if [[ "$FORCE" != "true" && -d "$WORK_DIR" ]]; then
+  PRNUM=$(echo "$STATE" | jq -r '.pr_number // empty')
+  if [[ -n "$PRNUM" ]] && [[ "$(gh pr view "$PRNUM" --json state --jq .state 2>/dev/null)" == "MERGED" ]] \
+     && [[ -z "$(git -C "$WORK_DIR" status --porcelain 2>/dev/null | head -1)" ]]; then
+    echo "PR #$PRNUM is merged and the tree is clean — safe to remove."
+    FORCE=true
+  fi
+fi
+if [[ "$FORCE" != "true" && -d "$WORK_DIR" ]]; then
+  UNSAFE=""
+  if [[ -n "$(git -C "$WORK_DIR" status --porcelain 2>/dev/null | head -1)" ]]; then
+    UNSAFE="uncommitted changes"
+  else
+    UPSTREAM=$(git -C "$WORK_DIR" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || true)
+    if [[ -n "$UPSTREAM" ]]; then
+      AHEAD=$(git -C "$WORK_DIR" rev-list --count "@{u}..HEAD" 2>/dev/null || echo 0)
+      (( AHEAD > 0 )) && UNSAFE="$AHEAD unpushed commit(s)"
+    else
+      # No upstream: unsafe only if the branch has commits not on origin/main
+      # AND they aren't already merged (squash-merges won't match by SHA — the
+      # caller should verify the PR merged and use --force, or push first).
+      AHEAD=$(git -C "$WORK_DIR" rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+      (( AHEAD > 0 )) && UNSAFE="$AHEAD commit(s) not on origin/main (branch never pushed)"
+    fi
+  fi
+  if [[ -n "$UNSAFE" ]]; then
+    echo "rclean: REFUSING to remove '$NAME' — $UNSAFE in $WORK_DIR"
+    echo "rclean: push/land the work first, or re-run with --force if it is truly disposable"
+    echo "rclean: (squash-merged PRs: verify merged with 'gh pr view', then --force is safe)"
+    exit 1
+  fi
+fi
+
 # Unpromote if currently promoted (only for worktree mode — local mode doesn't promote)
 PROMOTED=$(echo "$STATE" | jq -r '.promoted // "false"')
 if [[ "$PROMOTED" == "true" && "$MODE" != "local" ]]; then
@@ -56,20 +100,6 @@ if [[ "$PROMOTED" == "true" && "$MODE" != "local" ]]; then
     fi
     echo "Unpromoting branch first..."
     "$SCRIPT_DIR/runpromote" "$NAME"
-  fi
-fi
-
-# Check for unpushed commits
-UNPUSHED=$(git -C "$WORK_DIR" log --oneline "@{upstream}..HEAD" 2>/dev/null || \
-           git -C "$WORK_DIR" log --oneline "origin/main..HEAD" 2>/dev/null || echo "")
-if [[ -n "$UNPUSHED" ]]; then
-  echo "Warning: unpushed commits in '$NAME':"
-  echo "$UNPUSHED"
-  echo ""
-  read -rp "Continue anyway? [y/N] " confirm
-  if [[ "$confirm" != [yY] ]]; then
-    echo "Aborted."
-    exit 1
   fi
 fi
 
@@ -111,12 +141,17 @@ else
     echo "Worktree '$NAME' not found at $WORKTREE_PATH (pruned stale references)"
   fi
 
-  # Prompt to delete branch
+  # Delete branch (auto with --yes; prompt otherwise)
   if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
-    read -rp "Delete branch '$BRANCH'? [y/N] " del_branch
-    if [[ "$del_branch" == [yY] ]]; then
+    if [[ "$YES" == "true" ]]; then
       git -C "$RHYTHMS_DIR" branch -D "$BRANCH"
       echo "Branch '$BRANCH' deleted."
+    else
+      read -rp "Delete branch '$BRANCH'? [y/N] " del_branch
+      if [[ "$del_branch" == [yY] ]]; then
+        git -C "$RHYTHMS_DIR" branch -D "$BRANCH"
+        echo "Branch '$BRANCH' deleted."
+      fi
     fi
   fi
 

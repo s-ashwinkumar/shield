@@ -50,6 +50,11 @@ For each pending item, IN THIS ORDER:
 - No ticket yet? Create one in Linear first (playbook stage 0 requires it), confirming title/description with the captain.
 - Run `rstream <ticket>` (add `--design` for design-size work if the captain says so; `--god` only if they explicitly ask). Report the window name.
 - Multi-part asks: split into tickets/streams with the captain's confirmation — one line each, no elaborate decomposition.
+- **Closing streams** ("close/clean up <stream>"): ONE command — `rclean <stream> --yes`. It is
+  safe by default: merged PR + clean tree removes silently; uncommitted/unpushed work makes it
+  REFUSE with a reason. Do NOT hand-verify merges, do NOT pipe y/n answers, do NOT rm anything
+  yourself. If it refuses, report the reason to the captain — `--force` only when the captain
+  explicitly says the work is disposable.
 - **Takeovers** ("take over PR #N" / "pick up <branch>"): look up the PR (`gh pr view <N> --repo <owner/repo> --json headRefName,title,author,body`); find the ticket in the PR/Linear or get one created (captain confirms); make the branch local (`git -C "$RHYTHMS_DIR" fetch origin <branch>:<branch>`); dispatch `rstream <ticket> --branch <branch>`; then inject the framing into the new stream's pane (relay plumbing): "This is a takeover of PR #N (<author>'s incomplete work). Before planning: read the PR description and review comments, diff the branch vs main, assess done vs missing, then propose a plan for the remainder — the QA test plan covers the whole feature, not just the delta."
 
 ## Hard cost rules (you are the only token spender in this system)
