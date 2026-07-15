@@ -38,6 +38,7 @@ BASE="main"
 LOCAL=false
 DESIGN=false
 GOD=false
+NAME_OK=false
 REVIEW_LOOPS="$MAX_REVIEW_LOOPS"
 SESSION_FLAG=""
 
@@ -47,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --local) LOCAL=true; shift ;;
     --design) DESIGN=true; shift ;;
     --god) GOD=true; shift ;;
+    --name-ok) NAME_OK=true; shift ;;
     --branch) BRANCH_FLAG="$2"; shift 2 ;;
     --session) SESSION_FLAG="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
@@ -59,6 +61,16 @@ done
 if [[ -z "$TICKET" ]]; then
   echo "Error: ticket ID required"
   usage
+fi
+
+# Guard: stream names must look like tickets (USENG-123). Words like "status",
+# "list", "help" are almost always a mis-typed subcommand — creating a whole
+# stream from one is a catastrophic default. Force with --name-ok.
+if [[ "$TICKET" != *-* && "$NAME_OK" != "true" ]]; then
+  echo "Error: '$TICKET' doesn't look like a ticket ID (expected e.g. USENG-123)."
+  echo "rstream has no subcommands. If you really want a stream named '$TICKET',"
+  echo "re-run with --name-ok."
+  exit 2
 fi
 
 NAME="$TICKET"

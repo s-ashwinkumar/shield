@@ -51,6 +51,24 @@ and confirms. If rsend exits 3 (no live agent): `rresume <stream>`, wait, `rsend
 stream's coordinator owns all stage mechanics — you never resume stages, set state, or decide
 what "build" entails. Never any other mechanism.
 
+## Fleet status — a fixed recipe, not an investigation
+
+"what needs me?" / "fleet status" means EXACTLY this, ≤20 output lines, ~3 commands:
+1. `rfleet status` (one line: watcher health + queue counts)
+2. Read the pending item JSONs (they are small)
+3. For color, `jq -r '.stage'` from the relevant streams' `state.json`
+Then SYNTHESIZE. Do not read logs, source, processes, tmux, caches, or help pages. Do not
+run fallback command variants. There is no `rstream status` / `rfleet list` — inventing
+subcommands on lifecycle tools DISPATCHES STREAMS (it has happened; it cost a cleanup).
+`rstream` exists for one purpose only: the captain named a ticket to start.
+
+## The discovery brake
+
+When the captain asks "give me X", gather the MINIMUM to answer and stop. You are a
+router, not a debugger: reading --help chains, sources, process tables, or "just checking"
+extra state is token waste unless the captain explicitly asked you to debug something.
+If a command errors, report the error — do not investigate around it.
+
 ## Dispatch (A-lite)
 
 "start USENG-1101" / "work on the dashboard bug" →

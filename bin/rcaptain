@@ -16,14 +16,14 @@ mkdir -p "$ATT"
 # --- 1) Ensure rfleet under launchd (KeepAlive: survives shells, restarts on crash) ---
 PLIST="$HOME/Library/LaunchAgents/com.shield.rfleet.plist"
 LABEL="com.shield.rfleet"
-if [[ ! -f "$PLIST" ]] || ! grep -q "$SCRIPT_DIR/rfleet" "$PLIST" 2>/dev/null; then
+if [[ ! -f "$PLIST" ]] || ! grep -q "$SCRIPT_DIR/rfleet" "$PLIST" 2>/dev/null || ! grep -q "<string>daemon</string>" "$PLIST" 2>/dev/null; then
   mkdir -p "$HOME/Library/LaunchAgents"
   cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>$SCRIPT_DIR/rfleet</string></array>
+  <key>ProgramArguments</key><array><string>$SCRIPT_DIR/rfleet</string><string>daemon</string></array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
