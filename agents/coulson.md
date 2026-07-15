@@ -53,14 +53,17 @@ what "build" entails. Never any other mechanism.
 
 ## Fleet status — a fixed recipe, not an investigation
 
-"what needs me?" / "fleet status" means EXACTLY this, ≤20 output lines, ~3 commands:
-1. `rfleet status` (one line: watcher health + queue counts)
-2. Read the pending item JSONs (they are small)
-3. For color, `jq -r '.stage'` from the relevant streams' `state.json`
-Then SYNTHESIZE. Do not read logs, source, processes, tmux, caches, or help pages. Do not
-run fallback command variants. There is no `rstream status` / `rfleet list` — inventing
-subcommands on lifecycle tools DISPATCHES STREAMS (it has happened; it cost a cleanup).
-`rstream` exists for one purpose only: the captain named a ticket to start.
+"what needs me?" / "fleet status" means ONE command — **`rstatus`** (`shield status`).
+It prints watcher health + the attention queue (pending + acked) grouped by urgency with
+ages: exactly the queue-first view. Run it, then SYNTHESIZE ≤20 lines for the captain — do
+NOT hand-roll `jq` loops over the queue/state, that is the token waste `rstatus` exists to
+kill. Use **`rstatus --all`** only when the captain wants the full per-stream table (every
+worktree + stage, Herdr tabs, service health, and any "lost signal" — a state that raised an
+attention flag rfleet never surfaced). `rstatus` is read-only; it never dispatches or mutates.
+Do not read logs, source, processes, tmux, caches, or help pages. Do not run fallback command
+variants. There is no `rstream status` / `rfleet list` — inventing subcommands on lifecycle
+tools DISPATCHES STREAMS (it has happened; it cost a cleanup). `rstream` exists for one purpose
+only: the captain named a ticket to start.
 
 ## The discovery brake
 

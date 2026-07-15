@@ -1,71 +1,155 @@
 #!/usr/bin/env bash
-# rstatus -- Show active workstreams with pipeline stages
+# rstatus -- Coulson's fleet status: what needs the captain, at a glance.
+#
+# Default: watcher health + the attention queue (items needing a human),
+#          grouped by urgency with ages, plus acked items awaiting the captain.
+#          This is Coulson's primary read — run it, relay it, don't hand-roll jq.
+# --all:   ALSO show every workstream + pipeline stage, Herdr tabs, and local
+#          service health (the original rstatus detail view), and flag any
+#          "lost signal" — a stream whose state.json raised an attention flag
+#          that never surfaced as a queue item.
+#
+# Read-only. Never dispatches, never mutates the queue. Safe to run anytime.
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 source "$SCRIPT_DIR/_rdev_lib.sh"
 rdev_load_config
 
-# Accept --session flag
+ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
+ALL=false
 SESSION_FLAG=""
+prev=""
 for arg in "$@"; do
-  if [[ "$prev" == "--session" ]]; then SESSION_FLAG="$arg"; fi
+  case "$arg" in
+    -a|--all) ALL=true ;;
+    -h|--help)
+      cat <<EOF
+Usage: rstatus [--all] [--session <name>]
+
+Fleet status for the captain (read-only).
+  (default)   watcher health + attention queue: what needs you, by urgency.
+  --all, -a   also list every workstream + stage, Herdr tabs, and service health,
+              and flag lost signals (state raised a flag rfleet never surfaced).
+EOF
+      exit 0 ;;
+  esac
+  [[ "$prev" == "--session" ]] && SESSION_FLAG="$arg"
   prev="$arg"
 done
-rdev_resolve_session
 
-echo "=== Workstreams ==="
-echo ""
+NOW=$(date +%s)
 
-HAS_STREAMS=false
+# epoch -> compact age like "45m" / "12h" / "3d"
+age() {
+  local secs=$(( NOW - $1 )); (( secs < 0 )) && secs=0
+  if   (( secs < 3600 ));   then echo "$(( secs / 60 ))m"
+  elif (( secs < 172800 )); then echo "$(( secs / 3600 ))h"
+  else echo "$(( secs / 86400 ))d"; fi
+}
 
-git -C "$RHYTHMS_DIR" worktree list 2>/dev/null | while IFS= read -r line; do
-  wt_path=$(echo "$line" | awk '{print $1}')
+# urgency rank for a queue item type: lower = more urgent
+rank() {
+  case "$1" in
+    blocked|stuck|died)              echo 0 ;;
+    *_escalation)                    echo 1 ;;
+    plan_gate)                       echo 2 ;;
+    done_followups)                  echo 3 ;;
+    *)                               echo 4 ;;
+  esac
+}
 
-  if [[ "$wt_path" == "$WORKTREE_DIR"* ]]; then
-    HAS_STREAMS=true
-    wt_name=$(basename "$wt_path")
-    wt_branch=$(echo "$line" | awk '{print $3}' | tr -d '[]')
-    last_commit=$(git -C "$wt_path" log -1 --format="%cr" 2>/dev/null || echo "unknown")
+# --- watcher health + counts (delegates to rfleet's own status line) ---
+"$SCRIPT_DIR/rfleet" status 2>/dev/null || echo "rfleet: (status unavailable)"
+echo
 
-    # Read pipeline state
-    state_file="$wt_path/.claude/rdev/state.json"
-    if [[ -f "$state_file" ]]; then
-      stage=$(jq -r '.stage // "unknown"' "$state_file")
-      ticket=$(jq -r '.ticket // "-"' "$state_file")
-      promoted=$(jq -r '.promoted // "false"' "$state_file")
-      review_loops=$(jq -r '.review_loops_done // 0' "$state_file")
+# --- collect queue items: "rank<TAB>created<TAB>stream<TAB>type<TAB>summary" ---
+collect() {  # $1 = dir
+  local f
+  for f in "$1"/*.json; do
+    [[ -f "$f" ]] || continue
+    jq -r '[.type, (.created_at|tostring), .stream, .summary] | @tsv' "$f" 2>/dev/null \
+      | while IFS=$'\t' read -r type created stream summary; do
+          printf '%s\t%s\t%s\t%s\t%s\n' "$(rank "$type")" "$created" "$stream" "$type" "$summary"
+        done
+  done
+}
 
-      # Stage indicator
-      case "$stage" in
-        plan)        stage_icon="📋 plan" ;;
-        build)       stage_icon="🔨 build" ;;
-        ux_review)   stage_icon="👁  ux review" ;;
-        code_review) stage_icon="🔍 code review ($review_loops loops)" ;;
-        pr)          stage_icon="📤 opening PR" ;;
-        done)        stage_icon="✅ done" ;;
-        *)           stage_icon="❓ $stage" ;;
-      esac
+PENDING="$(collect "$ATT/pending" | sort -t$'\t' -k1,1n -k2,2n)"
+ACKED="$(collect "$ATT/acked"   | sort -t$'\t' -k1,1n -k2,2n)"
 
-      promoted_flag=""
-      if [[ "$promoted" == "true" ]]; then
-        promoted_flag=" [PROMOTED]"
-      fi
-
-      printf "  %-18s %-16s %-28s %s%s\n" "$wt_name" "$stage_icon" "$wt_branch" "(last: $last_commit)" "$promoted_flag"
-    else
-      printf "  %-18s %-16s %-28s %s\n" "$wt_name" "no state" "$wt_branch" "(last: $last_commit)"
-    fi
+if [[ -z "$PENDING" && -z "$ACKED" ]]; then
+  echo "✓ Queue empty — nothing needs the captain."
+else
+  if [[ -n "$ACKED" ]]; then
+    echo "⏳ ACKED — waiting on you (no dead-man timer):"
+    while IFS=$'\t' read -r _ created stream type summary; do
+      [[ -z "$stream" ]] && continue
+      printf '  • %-24s %-16s %s\n' "$stream" "[$type]" "$summary"
+    done <<< "$ACKED"
+    echo
   fi
-done
-
-if [[ "$HAS_STREAMS" == "false" ]]; then
-  echo "  No active workstreams."
+  if [[ -n "$PENDING" ]]; then
+    echo "🔔 PENDING — needs a decision (most urgent first):"
+    while IFS=$'\t' read -r _ created stream type summary; do
+      [[ -z "$stream" ]] && continue
+      printf '  • %-24s %-16s %4s  %s\n' "$stream" "[$type]" "$(age "$created")" "$summary"
+    done <<< "$PENDING"
+  fi
 fi
 
-echo ""
-echo "=== Herdr tabs ($RDEV_WORKSPACE) ==="
-echo ""
+$ALL || exit 0
 
+# ==================== --all: full detail ====================
+rdev_resolve_session
+
+echo
+echo "════ ALL WORKSTREAMS ════"
+echo
+# Capture into a var (not a pipe) so we can detect emptiness without a subshell.
+WT_LINES="$(git -C "$RHYTHMS_DIR" worktree list 2>/dev/null | awk -v d="$WORKTREE_DIR" '$1 ~ "^"d {print}')"
+if [[ -z "$WT_LINES" ]]; then
+  echo "  No active workstreams."
+fi
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  wt_path=$(echo "$line" | awk '{print $1}')
+  wt_name=$(basename "$wt_path")
+  wt_branch=$(echo "$line" | awk '{print $3}' | tr -d '[]')
+  last_commit=$(git -C "$wt_path" log -1 --format="%cr" 2>/dev/null || echo "unknown")
+  state_file="$wt_path/.claude/rdev/state.json"
+  if [[ -f "$state_file" ]]; then
+    stage=$(jq -r '.stage // "unknown"' "$state_file")
+    promoted=$(jq -r '.promoted // "false"' "$state_file")
+    review_loops=$(jq -r '.review_loops_done // 0' "$state_file")
+    attn=$(jq -r '.attention.type // "-"' "$state_file")
+    case "$stage" in
+      plan)        stage_icon="📋 plan" ;;
+      build)       stage_icon="🔨 build" ;;
+      ux_review)   stage_icon="👁  ux review" ;;
+      code_review) stage_icon="🔍 review ($review_loops)" ;;
+      qa)          stage_icon="🧪 qa" ;;
+      pr)          stage_icon="📤 pr" ;;
+      done)        stage_icon="✅ done" ;;
+      *)           stage_icon="❓ $stage" ;;
+    esac
+    flags=""
+    [[ "$promoted" == "true" ]] && flags+=" [PROMOTED]"
+    [[ "$attn" != "-" ]] && flags+=" [attn:$attn]"
+    printf "  %-24s %-18s %-30s %s%s\n" "$wt_name" "$stage_icon" "$wt_branch" "(last: $last_commit)" "$flags"
+    # lost signal: state flags attention but no queue item exists
+    if [[ "$attn" != "-" ]] \
+       && ! ls "$ATT/pending/${wt_name}--"*.json >/dev/null 2>&1 \
+       && ! ls "$ATT/acked/${wt_name}--"*.json   >/dev/null 2>&1; then
+      printf '  ⚠ LOST SIGNAL: %s raised [%s] but no queue item (rfleet has not surfaced it)\n' "$wt_name" "$attn"
+    fi
+  else
+    printf "  %-24s %-18s %-30s %s\n" "$wt_name" "no state" "$wt_branch" "(last: $last_commit)"
+  fi
+done <<< "$WT_LINES"
+
+echo
+echo "════ HERDR TABS ($RDEV_WORKSPACE) ════"
+echo
 WS_ID="$(rdev-mux space-find --name "$RDEV_WORKSPACE" 2>/dev/null)"
 if [[ -n "$WS_ID" ]]; then
   tabs="$(rdev-mux stream-list --workspace "$WS_ID" 2>/dev/null)"
@@ -74,18 +158,12 @@ else
   echo "  Herdr workspace '$RDEV_WORKSPACE' not found (is the server running?)"
 fi
 
-echo ""
-echo "=== Services ==="
-echo ""
-
-declare -A ports=(
-  [webui]=3200
-  [railsapi]=3100
-  [mlai]=8000
-)
-
-for svc in "${!ports[@]}"; do
-  port=${ports[$svc]}
+echo
+echo "════ SERVICES ════"
+echo
+# name:port pairs (no associative arrays — bash 3.2 / set -u safe)
+for pair in webui:3200 railsapi:3100 mlai:8000; do
+  svc=${pair%%:*}; port=${pair##*:}
   if curl -sf -o /dev/null --connect-timeout 1 "http://localhost:$port" 2>/dev/null; then
     printf "  %-12s :%s  ✓ up\n" "$svc" "$port"
   else
