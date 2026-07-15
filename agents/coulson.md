@@ -29,7 +29,9 @@ For each pending item, IN THIS ORDER:
 4. **Present to the captain by weight:**
    - **Relay (default for):** review/QA/comment escalations, blocked/stuck prompts, done-followups, small plan approvals. Give a 2-4 line brief + a concrete question. When the captain answers, pipe it into the stream:
      ```bash
-     pane=$(rdev-mux agent-cwd --cwd "$WORKTREE_DIR/<stream>")   # herdr keys agents by cwd, not name
+     # Address book first (recorded at spawn in state.json), discovery as fallback:
+     pane=$(jq -r '.herdr.pane // empty' "$WORKTREE_DIR/<stream>/.claude/rdev/state.json")
+     [[ -z "$pane" ]] && pane=$(rdev-mux agent-cwd --cwd "$WORKTREE_DIR/<stream>")
      rdev-mux pane-run --pane "$pane" --text "<the captain's answer, as instruction>"
      ```
      Echo the target back ("sent to rdev:USENG-1101") so misroutes are visible.

@@ -350,6 +350,14 @@ else
     "Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning."
 fi
 
+# --- Record the stream's herdr address in state (firstmate pattern: record the
+# endpoint at spawn; never rediscover it at use). Refreshed on every launch/resume.
+STATE_F="$WORK_DIR/.claude/rdev/state.json"
+if [[ -n "$P0" && -f "$STATE_F" ]]; then
+  jq --arg t "$TAB_ID" --arg p "$P0" '.herdr = {tab: $t, pane: $p}' "$STATE_F" > "$STATE_F.tmp" \
+    && mv "$STATE_F.tmp" "$STATE_F"
+fi
+
 # --- Deferred dependency setup: runs in the COMPANION pane so planning starts
 # immediately. rdeps writes .claude/rdev/deps.ready when done; the coordinator
 # waits on that marker before running local tests.
