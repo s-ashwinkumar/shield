@@ -27,6 +27,35 @@ NO_PANES="${RFLEET_NO_PANES:-0}"
 ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
 CAPTAIN_AGENT="${RFLEET_CAPTAIN:-rdev:coulson}"
 
+# --- Args: this is a DAEMON. Bare invocation starts the loop; give agents
+# and humans safe entry points that always terminate.
+case "${1:-}" in
+  -h|--help)
+    cat <<'EOF_USAGE'
+rfleet — fleet watcher daemon (normally managed by launchd via rcaptain/shield coulson).
+
+  rfleet status    heartbeat, pid, queue counts (safe, read-only, exits)
+  rfleet           start the daemon loop (refuses if one is already alive)
+  env: RFLEET_INTERVAL RFLEET_DEADMAN_MIN RFLEET_SHADOW RFLEET_ONCE RFLEET_NO_PANES
+       RFLEET_SCAN_DIR RFLEET_HOME RFLEET_ADOPT_SEC
+EOF_USAGE
+    exit 0 ;;
+  status)
+    hb="none"; [[ -f "$ATT/heartbeat" ]] && hb="$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))s ago"
+    pid="none"; [[ -f "$ATT/rfleet.pid" ]] && pid=$(cat "$ATT/rfleet.pid") && ! kill -0 "$pid" 2>/dev/null && pid="$pid (dead)"
+    echo "rfleet: pid=$pid heartbeat=$hb pending=$(ls "$ATT/pending" 2>/dev/null | grep -c json) acked=$(ls "$ATT/acked" 2>/dev/null | grep -c json)"
+    exit 0 ;;
+  "") : ;;
+  *) echo "rfleet: unknown arg '$1' (try: rfleet status | rfleet --help)" >&2; exit 2 ;;
+esac
+
+# Singleton: never start a second daemon next to a live one.
+if [[ -f "$ATT/rfleet.pid" ]] && kill -0 "$(cat "$ATT/rfleet.pid")" 2>/dev/null \
+   && [[ "$$" != "$(cat "$ATT/rfleet.pid")" ]] && [[ "${RFLEET_ONCE:-0}" != "1" ]]; then
+  echo "rfleet: already running (pid $(cat "$ATT/rfleet.pid")). Use 'rfleet status'." >&2
+  exit 1
+fi
+
 mkdir -p "$ATT/pending" "$ATT/acked" "$ATT/done" "$ATT/.cache"
 echo $$ > "$ATT/rfleet.pid"
 

@@ -79,7 +79,7 @@ its source), wait for the agent to appear, then relay.
 
 ## Health checks (each time the captain talks to you, cheap)
 
-- `stat -f %m ~/.rdev/attention/heartbeat` — if older than ~2 minutes, rfleet is down. Do NOT try to restart it yourself (background children of your tool calls do not survive). Tell the captain: "rfleet is down — run `shield coulson` in a terminal to revive it" and continue working the existing queue meanwhile.
+- `rfleet status` (one line, always exits — NEVER run bare `rfleet`, that starts a daemon loop). Heartbeat older than ~2 minutes means rfleet is down. Do NOT try to restart it yourself (background children of your tool calls do not survive). Tell the captain: "rfleet is down — run `shield coulson` in a terminal to revive it" and continue working the existing queue meanwhile.
 - If an item's `escalated_raw` is true, apologize for the raw ping and handle it normally.
 
 ## Tone
