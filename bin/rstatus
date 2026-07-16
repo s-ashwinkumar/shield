@@ -62,39 +62,42 @@ rank() {
 "$SCRIPT_DIR/rfleet" status 2>/dev/null || echo "rfleet: (status unavailable)"
 echo
 
-# --- collect queue items: "rank<TAB>created<TAB>stream<TAB>type<TAB>summary" ---
-collect() {  # $1 = dir
+# pane <stream> — herdr pane (or tab) id from the stream's state.json, or "-"
+pane() {
+  jq -r '.herdr.pane // .herdr.tab // "-"' \
+    "$WORKTREE_DIR/$1/.claude/rdev/state.json" 2>/dev/null || echo "-"
+}
+
+# --- collect queue items into: "rank<TAB>created<TAB>Q<TAB>stream<TAB>type<TAB>summary" ---
+# Q = N (new/pending) or A (acked). Deterministic — no summarizing, just the stored fields.
+collect() {  # $1 = dir, $2 = queue marker
   local f
   for f in "$1"/*.json; do
     [[ -f "$f" ]] || continue
-    jq -r '[.type, (.created_at|tostring), .stream, .summary] | @tsv' "$f" 2>/dev/null \
-      | while IFS=$'\t' read -r type created stream summary; do
-          printf '%s\t%s\t%s\t%s\t%s\n' "$(rank "$type")" "$created" "$stream" "$type" "$summary"
+    jq -r --arg q "$2" '[($q), .type, (.created_at|tostring), .stream, .summary] | @tsv' "$f" 2>/dev/null \
+      | while IFS=$'\t' read -r q type created stream summary; do
+          printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(rank "$type")" "$created" "$q" "$stream" "$type" "$summary"
         done
   done
 }
 
-PENDING="$(collect "$ATT/pending" | sort -t$'\t' -k1,1n -k2,2n)"
-ACKED="$(collect "$ATT/acked"   | sort -t$'\t' -k1,1n -k2,2n)"
+ROWS="$( { collect "$ATT/pending" N; collect "$ATT/acked" A; } | sort -t$'\t' -k1,1n -k2,2n )"
 
-if [[ -z "$PENDING" && -z "$ACKED" ]]; then
-  echo "✓ Queue empty — nothing needs the captain."
+if [[ -z "$ROWS" ]]; then
+  echo "nothing stuck — queue empty."
 else
-  if [[ -n "$ACKED" ]]; then
-    echo "⏳ ACKED — waiting on you (no dead-man timer):"
-    while IFS=$'\t' read -r _ created stream type summary; do
-      [[ -z "$stream" ]] && continue
-      printf '  • %-24s %-16s %s\n' "$stream" "[$type]" "$summary"
-    done <<< "$ACKED"
-    echo
-  fi
-  if [[ -n "$PENDING" ]]; then
-    echo "🔔 PENDING — needs a decision (most urgent first):"
-    while IFS=$'\t' read -r _ created stream type summary; do
-      [[ -z "$stream" ]] && continue
-      printf '  • %-24s %-16s %4s  %s\n' "$stream" "[$type]" "$(age "$created")" "$summary"
-    done <<< "$PENDING"
-  fi
+  # Deterministic table: what's stuck, where (pane), and how to jump.
+  printf '%-1s %-24s %-20s %5s %-9s %s\n' "" "STREAM" "STUCK ON" "AGE" "PANE" "REASON"
+  printf '%-1s %-24s %-20s %5s %-9s %s\n' "" "------" "--------" "-----" "----" "------"
+  while IFS=$'\t' read -r _ created q stream type summary; do
+    [[ -z "$stream" ]] && continue
+    mark="•"; [[ "$q" == "A" ]] && mark="·"   # • = new/pending, · = already acked
+    reason="${summary% (*}"                     # drop trailing " (TICKET)" noise
+    (( ${#reason} > 60 )) && reason="${reason:0:57}..."
+    printf '%-1s %-24s %-20s %5s %-9s %s\n' "$mark" "$stream" "$type" "$(age "$created")" "$(pane "$stream")" "$reason"
+  done <<< "$ROWS"
+  echo
+  echo "•=new  ·=acked   ·jump: rfocus <stream>  (or  !rfocus <stream>  in this session)"
 fi
 
 $ALL || exit 0
