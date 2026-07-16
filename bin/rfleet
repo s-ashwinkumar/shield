@@ -109,6 +109,23 @@ emit() {
   log "item: $id — $summary"
 }
 
+# already_surfaced <stream> <type> <summary>
+# True if we already surfaced this stream+type with an IDENTICAL summary that the
+# captain has seen (acked/) or that was resolved (done/). Guards against coordinator
+# flags that re-bump attention.ts with no material change ("still waiting…"), which
+# would otherwise re-emit every scan cycle and churn the queue.
+already_surfaced() {
+  local stream="$1" type="$2" summary="$3" d f prev
+  for d in acked done; do
+    for f in "$ATT/$d/${stream}--${type}--"*.json; do
+      [[ -f "$f" ]] || continue
+      prev=$(jq -r '.summary // ""' "$f" 2>/dev/null)
+      [[ "$prev" == "$summary" ]] && return 0
+    done
+  done
+  return 1
+}
+
 # cancel <pending-file> <reason>
 cancel() {
   local f="$1" reason="$2" base
@@ -164,10 +181,14 @@ scan_stream() {
   att_ts=$(jq -r '.attention.ts // ""' "$state")
   prev_att_ts=$(jq -r '.attention.ts // ""' "$cache" 2>/dev/null || echo "")
   if [[ -n "$att_ts" && "$att_ts" != "$prev_att_ts" ]]; then
-    local att_type att_summary
+    local att_type att_summary full_summary
     att_type=$(jq -r '.attention.type // "blocked"' "$state")
     att_summary=$(jq -r '.attention.summary // "stream needs attention"' "$state")
-    emit "$stream" "$att_type" "$att_summary (${ticket:-$stream})" "$state"
+    full_summary="$att_summary (${ticket:-$stream})"
+    # Skip if the coordinator just re-bumped the flag ts with an unchanged summary.
+    if ! already_surfaced "$stream" "$att_type" "$full_summary"; then
+      emit "$stream" "$att_type" "$full_summary" "$state"
+    fi
   fi
 
   # 3) Liveness + stuck prompts (needs herdr)
