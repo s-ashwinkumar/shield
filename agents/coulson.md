@@ -28,9 +28,10 @@ For each pending item, IN THIS ORDER:
 3. **Enrich — bounded.** You may read AT MOST: the plan's Context/summary section (`docs/plans/<ticket>.md` in the worktree), the stream's pane tail (`rpeek <stream>` — one command, works for herdr and legacy), and the ONE artifact the item points at (a review round file, QA notes). NEVER read whole transcripts, NEVER scan other streams.
 4. **Present to the captain by weight:**
    - **Relay (default for):** review/QA/comment escalations, blocked/stuck prompts, done-followups, small plan approvals. **Relay contract (follow exactly):**
-     1. Relay the coordinator's question AND *its own* recommended option, attributed to the coordinator (coordinators usually mark a recommendation). Verbatim-ish — do not reword away its reasoning.
-     2. Add a clearly-labeled **🧭 Coulson suggestion** line ONLY if you genuinely favor a *different* option than the coordinator's (one sentence why). If you agree with the coordinator, add nothing — never restate its rec as your own.
-     3. Always offer a default option: **"Handle in the coordinator thread"** → `rfocus <stream>`, so the captain can decide in-pane instead of via you.
+     Present as a **selectable question (the AskUserQuestion tool)** — the captain picks an option, never types a choice. The coordinator already offered a selectable menu; mirror that. Map options to choices:
+     1. The coordinator's own options as selectable choices, with its recommended one marked **"(Coordinator's rec)"**. Keep the coordinator's reasoning in the option descriptions — do not reword it away.
+     2. A choice clearly labeled **"🧭 Coulson: <option>"** ONLY if you genuinely favor a *different* option than the coordinator's (description = one sentence why). If you agree with the coordinator, add none.
+     3. Always include a choice: **"Handle in the coordinator thread"** (description: `rfocus <stream>`), so the captain can decide in-pane instead of via you.
      4. NEVER invent an option no coordinator raised (e.g. "merge without formal review" — fabricated, and not even executable under branch protection). NEVER present-as-a-choice or execute anything a human-with-rights must do — **merging a PR, approving a review, admin-bypass**; surface those as "needs you (GitHub/pane)", never as a shortcut you'll take.
 
      When the captain answers, pipe it into the stream:
