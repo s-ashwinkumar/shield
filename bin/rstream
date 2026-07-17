@@ -205,9 +205,10 @@ if [[ "$RESUMING" == "false" ]]; then
 
     # Copy rdev AGENTS into worktree's .claude/agents/ (agents stay per-worktree
     # because they hold permission frontmatter the worktree session needs).
-    # SKILLS are NOT copied per-worktree anymore — they live user-wide at
-    # ~/.claude/skills/rdev/ (sync via: cp -r ~/code/rdev/skills/* ~/.claude/skills/rdev/).
-    # Per-worktree skill copies polluted .agents/skills/ via symlink chains and broke rpromote.
+    # SKILLS are gap-filled user-wide by `sync-skills` (called below): rdev's
+    # workflow skills go FLAT into ~/.claude/skills/<name>/ (the only layout
+    # Claude Code discovers), and only for the ones the rhythms repo doesn't
+    # already provide. Per-worktree skill copies broke rpromote (symlink chains).
     WORK_CLAUDE="$WORK_DIR/.claude"
     if [[ -L "$WORK_CLAUDE" ]]; then
       REAL_CLAUDE="$(readlink "$WORK_CLAUDE")"
@@ -226,12 +227,15 @@ if [[ "$RESUMING" == "false" ]]; then
         cp "$REAL_CLAUDE"/agents/*.md "$WORK_CLAUDE/agents/" 2>/dev/null || true
       fi
 
-      echo "Set up .claude with rdev agents (skills come from ~/.claude/skills/rdev)"
+      echo "Set up .claude with rdev agents"
     else
       mkdir -p "$WORK_CLAUDE/agents"
       cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
-      echo "Copied rdev agents (skills come from ~/.claude/skills/rdev)"
+      echo "Copied rdev agents"
     fi
+
+    # Gap-fill rdev's workflow skills user-wide (flat, discoverable).
+    "$SCRIPT_DIR/sync-skills" || echo "sync-skills failed (non-fatal)"
 
     # Copy the workflow playbook into the worktree (gitignored via /.claude).
     # The playbook lives in rdev for now (opt-in phase); it moves into the
@@ -293,7 +297,8 @@ if [[ "$RESUMING" == "true" ]] && [[ "$LOCAL" == "false" ]]; then
   WORK_CLAUDE="$WORK_DIR/.claude"
   mkdir -p "$WORK_CLAUDE/agents"
   cp "$RDEV_ROOT"/agents/*.md "$WORK_CLAUDE/agents/"
-  echo "Updated agents from rdev (skills come from ~/.claude/skills/rdev)"
+  echo "Updated agents from rdev"
+  "$SCRIPT_DIR/sync-skills" || echo "sync-skills failed (non-fatal)"
   if [[ -d "$RDEV_ROOT/playbook" ]]; then
     mkdir -p "$WORK_CLAUDE/rdev/playbook"
     cp -R "$RDEV_ROOT"/playbook/* "$WORK_CLAUDE/rdev/playbook/"
@@ -302,11 +307,12 @@ if [[ "$RESUMING" == "true" ]] && [[ "$LOCAL" == "false" ]]; then
 fi
 
 
-# For local mode, copy agents only (skills come from ~/.claude/skills/rdev user-wide)
+# For local mode, copy agents only (skills are gap-filled user-wide by sync-skills)
 if [[ "$LOCAL" == "true" ]]; then
   mkdir -p "$RHYTHMS_DIR/.claude/agents"
   cp "$RDEV_ROOT"/agents/*.md "$RHYTHMS_DIR/.claude/agents/"
-  echo "Copied rdev agents to main repo (skills come from ~/.claude/skills/rdev)"
+  echo "Copied rdev agents to main repo"
+  "$SCRIPT_DIR/sync-skills" || echo "sync-skills failed (non-fatal)"
 fi
 
 # --- Create Herdr tab (via rdev-mux); reuse on resume ---

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# sync-skills -- make rdev's workflow skills available to Claude Code sessions.
+#
+# Model (per the two-layer design): the workflow prefers skills the RHYTHMS repo
+# already provides; rdev only fills the GAP — the skills rhythms doesn't have.
+# Installs FLAT into ~/.claude/skills/<name>/ (the only layout Claude Code
+# discovers as /name — nested ~/.claude/skills/rdev/<name>/ is NOT discovered).
+# Idempotent; safe to run on every stream create/resume.
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+SRC="$RDEV_ROOT/skills"
+DST="$HOME/.claude/skills"
+mkdir -p "$DST"
+
+# skill name from SKILL.md frontmatter (falls back to dir name)
+skill_name() { awk -F': *' '/^name:/{print $2; exit}' "$1/SKILL.md" 2>/dev/null; }
+
+# does the rhythms repo already provide a skill by this name? (use theirs if so)
+rhythms_has() {
+  local want="$1" base d
+  for base in "$RHYTHMS_DIR/.claude/skills" "$RHYTHMS_DIR/.agents/skills"; do
+    [[ -d "$base" ]] || continue
+    [[ -f "$base/$want/SKILL.md" ]] && return 0
+    for d in "$base"/*/; do
+      [[ -f "$d/SKILL.md" ]] || continue
+      [[ "$(skill_name "$d")" == "$want" ]] && return 0
+    done
+  done
+  return 1
+}
+
+[[ -d "$SRC" ]] || { echo "sync-skills: no $SRC — nothing to do"; exit 0; }
+
+installed=() skipped=()
+for d in "$SRC"/*/; do
+  [[ -f "$d/SKILL.md" ]] || continue        # skip loose reference .md files
+  dir="$(basename "$d")"
+  name="$(skill_name "$d")"; name="${name:-$dir}"
+  if rhythms_has "$name"; then
+    skipped+=("$name↦rhythms")
+    continue
+  fi
+  rm -rf "$DST/$dir"
+  cp -R "$d" "$DST/$dir"
+  installed+=("$name")
+done
+
+echo "sync-skills: installed [${installed[*]:-none}] flat in $DST; using rhythms' for [${skipped[*]:-none}]"
