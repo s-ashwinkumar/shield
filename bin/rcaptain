@@ -86,7 +86,7 @@ if [[ -z "$P0" ]]; then
   exit 1
 fi
 
-CAPTAIN_CMD="claude --agent coulson --permission-mode auto -n rdev:coulson 'On duty. Run rfleet status (never bare rfleet), check the attention queue at ~/.rdev/attention/pending/, then give me a one-screen fleet status.'"
+CAPTAIN_CMD="claude --agent coulson --permission-mode auto --remote-control rdev:coulson -n rdev:coulson 'On duty. Run rfleet status (never bare rfleet), check the attention queue at ~/.rdev/attention/pending/, then give me a one-screen fleet status.'"
 rdev-mux pane-run --pane "$P0" --text "$CAPTAIN_CMD" >/dev/null
 
 echo "captain: launched in tab 'captain' (agent rdev:coulson)"

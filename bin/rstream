@@ -368,13 +368,13 @@ if [[ -n "$LIVE_PANE" ]]; then
   exit 0
 fi
 
-COORD_CMD="claude --agent coordinator $PERM_FLAG -n rdev:$NAME 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'"
+COORD_CMD="claude --agent coordinator $PERM_FLAG --remote-control rdev:$NAME -n rdev:$NAME 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'"
 if [[ -n "$P0" ]]; then
   rdev-mux pane-run --pane "$P0" --text "$COORD_CMD"
 else
   # Fallback: no root pane id — start as a tracked agent (Herdr default layout).
   rdev-mux agent-start --name "$NAME" --cwd "$WORK_DIR" --tab "$TAB_ID" -- \
-    claude --agent coordinator $PERM_FLAG -n "rdev:$NAME" \
+    claude --agent coordinator $PERM_FLAG --remote-control "rdev:$NAME" -n "rdev:$NAME" \
     "Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning."
 fi
 
