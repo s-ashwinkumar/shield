@@ -6,6 +6,14 @@ and triage; nothing here is about *how* to solve anything.
 
 ## Steps
 
+0. **Resume check — before anything else.** If `docs/plans/<ticket-id>.md`
+   exists and its **Progress** section (see [stage 1](1-plan.md)) is not
+   `stage: done`, this work is already mid-pipeline: read the plan and the
+   Progress log, then **resume at the recorded stage and round — do not
+   restart**. In particular, code that exists but whose Progress shows no
+   clean review round is *unreviewed* — it goes through stage 3 before
+   anything else moves forward. Only when there is no plan file (or no
+   Progress section) is this a fresh start.
 1. **Read the ticket fully** — title, description, comments, labels, linked
    docs from Linear. Don't start from the title alone; comments often
    change the scope.

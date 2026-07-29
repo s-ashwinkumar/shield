@@ -64,7 +64,7 @@ Whatever tests exist — the ones you chose to write plus the touched
 services' existing suites — must demonstrably pass; *where they execute*
 depends on the environment:
 
-- **Local environment with the dev container** (rdev worktrees, a teammate's
+- **Local environment with the dev container** (a local worktree, a teammate's
   machine): run Tier 1/2 directly — fastest feedback, respect the isolation
   rules above.
 - **Remote/cloud agent with no local test environment**: push the branch and
@@ -77,4 +77,6 @@ depends on the environment:
 
 All tasks (or all batched issues) implemented and committed, and the tests
 for the touched services are **demonstrably passing** — local Tier 1/2
-output, or green CI on the pushed branch. → [Stage 3: Review](3-review.md)
+output, or green CI on the pushed branch. Update the plan's **Progress**
+section (stage + a log line for the batch) and commit it with the work.
+→ [Stage 3: Review](3-review.md)

@@ -56,7 +56,7 @@ expired escalates once for a re-login rather than failing rounds.
 **MCP-preview auth (for MCP-tool changes — do this yourself; escalate only
 for the interactive login):** the browser/persistent-profile trick above is
 for webui/HTTP QA. MCP QA against the preview needs its own auth flow — the
-coordinator drives it:
+agent drives it:
 
 1. Preview MCP endpoint = `https://mcpservers-rhythms-pr-<PR>.up.railway.app/rhythms/mcp`.
 2. Repoint the **`Rhythms-railway`** MCP server's `url` to that endpoint (in the
@@ -64,7 +64,7 @@ coordinator drives it:
 3. **Reconnect** so the new URL loads — restart the session, or `/mcp`.
 4. **Auth (human-in-the-loop — WorkOS OAuth can't be scripted):** open the auth
    URL, complete the WorkOS login, then **select this preview's tenant from the
-   dropdown.** Escalate to the captain for this click; resume when done.
+   dropdown.** Escalate to the human for this click; resume when done.
    - ⚠️ **Fresh-tenant gotcha:** a brand-new preview tenant may **not appear in
      the tenant dropdown** until it's been provisioned by a first webui login.
      If the tenant is missing, log into `https://webui-rhythms-pr-<PR>.up.railway.app/`
@@ -92,7 +92,9 @@ with the full issue history instead of grinding.
 
 ## Exit
 
-A full QA round finds **nothing**. → [Stage 5: Ship](5-ship.md)
+A full QA round finds **nothing**. Record the round (and its outcome) in the
+plan's **Progress** section — every round, clean or not, gets a log line.
+→ [Stage 5: Ship](5-ship.md)
 (Humans get involved here only via escalation — a non-converging loop —
 not as a routine checkpoint; the captured evidence lands in the PR for
 human judgment at review time.)

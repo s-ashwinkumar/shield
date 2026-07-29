@@ -7,7 +7,8 @@ links to a short doc with the details — this page is only the flow.
 
 > **Status: opt-in.** This workflow is an option, not (yet) the team standard.
 > It is currently distributed by the rdev harness (copied into each worktree
-> at `.claude/rdev/playbook/`); when the team adopts it, it moves into the
+> at `.claude/rdev/playbook/`) and piloted in-repo on the rhythms branch
+> `ashwin/dev-workflow-pilot`; when the team adopts it, it moves into the
 > rhythms repo as `docs/workflow.md` verbatim. Use it by telling your tool:
 > *"Follow the workflow playbook for this ticket."*
 
@@ -80,6 +81,10 @@ is implemented doesn't matter — *that* it exists does:
 
 1. **State** — persist the current stage and loop counters (review rounds,
    QA rounds, comment rounds) so a fresh session can resume mid-pipeline.
+   The workflow's built-in baseline is the plan file's **Progress** section
+   (see [1-plan](workflow/1-plan.md)) — committed with the branch, so it
+   works in any tool with no harness at all; a harness may keep richer
+   state on top, but Progress is always maintained.
 2. **Implementer** — something that writes code from a task batch: an
    agent, a subagent, or a person.
 3. **Fresh-eyes reviewer** — a reviewer that has not seen the
@@ -128,7 +133,10 @@ instructions win). Three known collisions, by name:
 ## Rules that hold across all stages
 
 - Never work on `main` — always the work's own branch (see stage 0).
-- The plan in `docs/plans/<ticket-id>.md` is the source of truth for scope.
+- The plan in `docs/plans/<ticket-id>.md` is the source of truth for scope,
+  and its **Progress** section is the source of truth for position: update
+  it at every stage transition and loop round; on any fresh session, read
+  it first and resume — never restart (stage 0's resume check).
 - **The Rule:** no unreviewed code moves forward; functionality-affecting
   changes get re-QA'd.
 - Every PR ships with **evidence** that the change works (stage 5).

@@ -45,6 +45,22 @@ Every plan, either size, contains:
 - **Tasks** — numbered, each independently completable and committable.
 - **Definition of done** — the observable outcomes that mean "finished"
   (tests passing, behavior visible, etc.).
+- **Progress** — the workflow's state, kept current from approval to done
+  (this is what lets any fresh session resume instead of restarting; see
+  [stage 0](0-setup.md)). Update it at **every stage transition and every
+  loop round**, and commit it with the work:
+
+  ```markdown
+  ## Progress
+  <!-- update at every stage transition and loop round -->
+  - stage: 3-review (round 2 of 3)   <!-- or: done -->
+  - plan approved: 2026-07-28, interactive (owner)
+  - log:
+    - 2026-07-28 plan approved; build started
+    - 2026-07-28 build done (tests green); review round 1: 2 findings -> build
+    - 2026-07-29 fixes in; review round 2 in progress
+  ```
+
 - **QA test plan** — required for **every** plan. It answers: "what would a
   careful manual tester do to prove this works?" — through the change's
   real interface (browser, API call, MCP client call, job trigger — see the
@@ -79,11 +95,11 @@ state condition, not necessarily a live conversation.
 
 **Raise the gate when — and only when — the plan is ready.** Once the plan
 file is written and you are presenting it for approval (paths 1 and 3 below),
-run `rgate <name>`. This flags the stream's state so the fleet watcher raises
-exactly one `plan_gate` attention item for the captain. Do **not** rely on
-entering the plan stage to notify anyone — streams are born in `stage: plan`,
-so only `rgate` marks a plan as genuinely ready. Skip `rgate` for the
-pre-approved (2) and spec-as-approval (4) paths, which proceed without waiting.
+signal the human through whatever channel the harness provides — say so in
+the live conversation, send a notification, or post the plan to the ticket.
+Don't treat "I entered the plan stage" as having asked for approval; only an
+explicit "plan ready for your review" counts. The pre-approved (2) and
+spec-as-approval (4) paths proceed without waiting.
 
 It can be satisfied four ways:
 

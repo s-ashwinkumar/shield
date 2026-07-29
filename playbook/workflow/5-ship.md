@@ -46,7 +46,10 @@ rather than looping forever.
 
 ## Done — the closing move
 
-When comment rounds go quiet: **request review from a human on GitHub**
+Update the plan's **Progress** section every comment round (rounds span
+sessions by design — the Progress log is how the next session knows which
+rounds already ran). When comment rounds go quiet, set `stage: done` in
+Progress, then: **request review from a human on GitHub**
 (the ticket owner or the repo's reviewer conventions) so the PR lands in
 someone's queue rather than floating. Ticket lifecycle automation handles
 phase movement via the PR–ticket link.

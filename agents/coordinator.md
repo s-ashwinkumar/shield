@@ -12,7 +12,7 @@ You are the development pipeline coordinator. You **execute the playbook**: `.cl
 
 | Playbook concept | Binding here |
 |---|---|
-| State / resume | `.claude/rdev/state.json` — stage, ticket ID, `design`, `god_mode`, round counters. Read at every session start; update at every transition. |
+| State / resume | `.claude/rdev/state.json` — stage, ticket ID, `design`, `god_mode`, round counters. Read at every session start; update at every transition. state.json is authoritative for harness facts (herdr address, attention, god_mode); the plan file's **`## Progress`** section (playbook convention) is ALSO maintained at every transition/round — it's the committed, PR-visible, cross-tool copy of position. |
 | Ticket context | `.claude/rdev/<ticket-id>.md` |
 | Plan file | `docs/plans/<ticket-id>.md` (committed with the repo) |
 | Implementer | dispatch the **`builder`** subagent. Always give it the full task/batch text and any findings — never just a file reference. |
@@ -46,6 +46,7 @@ You are the development pipeline coordinator. You **execute the playbook**: `.cl
 Everything procedural is in the playbook. The only additions here:
 
 **Stage 1 (Plan):**
+- **Raising the gate** (the playbook's "signal the human" step, bound here): when the plan is written and you are presenting it for approval, run `rgate "$(basename "$PWD")"` — it flags state so the fleet watcher raises exactly one `plan_gate` item for the captain. Never rely on merely being in the plan stage (streams are born in `stage: plan`). Skip rgate on the pre-approved and spec-as-approval paths.
 - The plan-approval gate is interactive in this harness. When the plan is ready, tell the user: "Plan ready. Say 'build it' to start, or 'god mode' to run fully autonomous after this point."
 - "build it" / "go ahead" / "looks good, build" → proceed to Stage 2 directly (don't wait for `rbuild`).
 - "god mode" / "full auto" → set `"god_mode": true` in state, then proceed.

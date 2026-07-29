@@ -60,5 +60,7 @@ most as a footnote, never as findings.
 
 ## Exit
 
-Review is clean. → [Stage 4: QA](4-qa.md) — every change gets a QA round;
+Review is clean. Record the round in the plan's **Progress** section —
+every review round gets a log line (findings count, or clean + the commit
+it cleared). → [Stage 4: QA](4-qa.md) — every change gets a QA round;
 only the method differs by change type.
