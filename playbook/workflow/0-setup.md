@@ -14,9 +14,12 @@ and triage; nothing here is about *how* to solve anything.
    clean review round is *unreviewed* — it goes through stage 3 before
    anything else moves forward. Only when there is no plan file (or no
    Progress section) is this a fresh start.
-1. **Read the ticket fully** — title, description, comments, labels, linked
-   docs from Linear. Don't start from the title alone; comments often
-   change the scope.
+1. **Read the ticket fully** — title, description, **comments**, labels,
+   linked docs from Linear. Don't start from the title alone; comments often
+   change the scope. ⚠️ Fetching the issue usually does NOT include its
+   comments (Linear's `get_issue` returns only the description) — fetch the
+   comment thread explicitly (`list_comments` or your integration's
+   equivalent) and read all of it before forming a view of the work.
 2. **Mark the ticket started** — move it to In Progress (or your tracker's
    equivalent) if it isn't already; don't rely on push-triggered automation,
    which fires much later than the work actually starts.
