@@ -41,20 +41,21 @@ can't escape silently again.
 
 ## Testing tiers — pick the lowest that proves the change
 
-Many branches are worked in parallel against one shared dev container, so
-local tests must not collide.
-
 - **Tier 1 — unit/component tests.** No shared state; run freely, always
   prefer these.
-- **Tier 2 — DB-backed tests.** Safe in parallel **only because each
-  worktree gets its own database**, keyed off `RDEV_DB_SUFFIX` in the
-  worktree's env:
-  - railsapi: `RAILS_ENV=test bundle exec rake db:prepare` first (reads the
-    suffixed `database.yml`), then rspec per railsapi/AGENTS.md.
-  - mlai: create/migrate the worktree's isolated dev DB first, then the mlai
-    test command from mlai/AGENTS.md.
-  - If `RDEV_DB_SUFFIX` is empty you are on the shared mainline database —
-    **never run destructive DB prep there.**
+- **Tier 2 — DB-backed tests.** The question to answer first: **is your test
+  database isolated from other concurrent work?**
+  - *Isolated* — a single checkout with its own dev container, or a worktree
+    whose environment gives it its own database (the repo's
+    `rhythms-new-worktree` skill sets up an isolated stack; some harnesses
+    key a per-worktree DB off an env suffix like `RDEV_DB_SUFFIX`). → Run
+    normally: railsapi `RAILS_ENV=test bundle exec rake db:prepare` then
+    rspec per railsapi/AGENTS.md; mlai: create/migrate its dev DB, then the
+    mlai test command from mlai/AGENTS.md.
+  - *Shared* — multiple worktrees/branches pointing at one database (e.g. a
+    worktree reusing the mainline container's DB without a suffix). →
+    **never run destructive DB prep there**; get an isolated DB first, or
+    fall back to CI (below).
 - **Tier 3 — real environment (running app / browser / API).** Not run
   locally against shared servers; that's what [stage 4: QA](4-qa.md) is for.
 
