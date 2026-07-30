@@ -27,7 +27,9 @@ round consists of "the tests pass", you haven't QA'd.
 the QA test plan (flicker, animation, subjective look/feel) go to the human
 as a crisp 20-second ask — don't automate them. Same stop-loss mid-round: if
 verifying a step needs more than ~2 attempts or elaborate scaffolding, hand
-that step to the human and continue the round.
+that step to the human and continue the round. (Autonomous mode: defer
+instead of asking — record as needs-human-eyes, finish the round, list them
+at done; the ticket isn't finished until a human clears them.)
 
 ## Method menu — test through whichever interfaces changed
 

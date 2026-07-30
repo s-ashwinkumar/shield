@@ -140,3 +140,10 @@ instructions win). Three known collisions, by name:
 - **The Rule:** no unreviewed code moves forward; functionality-affecting
   changes get re-QA'd.
 - Every PR ships with **evidence** that the change works (stage 5).
+- **Autonomy mode** — set at plan approval, recorded in Progress
+  (`mode: interactive` (default) | `autonomous`). Interactive: optional
+  human asks happen live (human-verify QA steps, "should I proceed?"
+  moments). Autonomous: never pause for those — defer them: record as
+  needs-human-eyes / a note, keep going, and list them at done. What NEVER
+  changes with mode: the plan-approval gate, escalation stops
+  (non-converging loops), and the agent never merging.
