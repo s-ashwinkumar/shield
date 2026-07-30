@@ -55,6 +55,7 @@ Every plan, either size, contains:
   <!-- update at every stage transition and loop round -->
   - stage: 3-review (round 2 of 3)   <!-- or: done -->
   - mode: interactive                <!-- or: autonomous (see workflow.md) -->
+  - env: ready                       <!-- or: CI-only (why) — stage 0 triage -->
   - plan approved: 2026-07-28, interactive (owner)
   - log:
     - 2026-07-28 plan approved; build started

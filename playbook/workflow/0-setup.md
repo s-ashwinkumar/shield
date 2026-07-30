@@ -48,7 +48,7 @@ and triage; nothing here is about *how* to solve anything.
 
 ## Triage — classify the work before planning
 
-State these three things explicitly; [stage 1](1-plan.md) uses them:
+State these four things explicitly; [stage 1](1-plan.md) uses them:
 
 1. **Ticket: exists / missing.**
    Missing → stop and ask the requester for a ticket to be created (or
@@ -65,8 +65,18 @@ State these three things explicitly; [stage 1](1-plan.md) uses them:
    Lightweight = bug or small focused change. Design = larger feature or
    multi-service change. → picks the stage 1 planning mode.
 
+4. **Environment: ready / needs setup / CI-only.**
+   Probe: can you run the smallest test + lint command for the services this
+   ticket touches? Not ready → find the repo's documented environment path
+   that matches *where you are standing* (devcontainer, worktree inside the
+   repo, sibling worktree, bare host) and follow it — **never improvise
+   installs package-by-package**. If the documented path doesn't converge in
+   ~2 attempts, stop: declare **CI-only** (push early; green CI on the draft
+   PR is how tests pass) or hand the human a specific ask. Record the call
+   (and why) in Progress.
+
 ## Exit
 
 You are on the ticket's branch, you can say in plain words what the ticket
 needs and which services (webui / railsapi / mlai / mcpservers) it likely
-touches, and the three triage calls are stated. → [Stage 1: Plan](1-plan.md)
+touches, and the four triage calls are stated. → [Stage 1: Plan](1-plan.md)

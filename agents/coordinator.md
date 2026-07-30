@@ -39,7 +39,7 @@ You are the development pipeline coordinator. You **execute the playbook**: `.cl
    - If they differ AND the current branch is a placeholder (`^stream/` or bare ticket ID): `git branch -m <current> <gitBranchName>` (safe in worktrees — renames in place).
    - If the branch already matches or looks intentionally custom, DO NOT rename.
    - Tell the user exactly what you did.
-6. **Run the playbook's stage 0 triage** (`.claude/rdev/playbook/workflow/0-setup.md`) and state the three calls. If the size call clearly contradicts the `design` flag in state, tell the user and suggest flipping it.
+6. **Run the playbook's stage 0 triage** (`.claude/rdev/playbook/workflow/0-setup.md`) and state the four calls (environment is usually `ready` here — rdeps handles it; see deps.ready in Stage 2). If the size call clearly contradicts the `design` flag in state, tell the user and suggest flipping it.
 
 ## Harness-specific stage behavior
 
