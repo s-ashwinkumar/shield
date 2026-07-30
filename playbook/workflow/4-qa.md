@@ -23,6 +23,12 @@ client system actually hits — and observe real behavior. It is NOT a re-run
 of the unit/integration tests (those already passed in Build). If your QA
 round consists of "the tests pass", you haven't QA'd.
 
+**Use the human when the human is cheaper.** Steps marked `human-verify` in
+the QA test plan (flicker, animation, subjective look/feel) go to the human
+as a crisp 20-second ask — don't automate them. Same stop-loss mid-round: if
+verifying a step needs more than ~2 attempts or elaborate scaffolding, hand
+that step to the human and continue the round.
+
 ## Method menu — test through whichever interfaces changed
 
 A change can touch several of these; run every row that applies. Always

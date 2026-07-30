@@ -66,6 +66,9 @@ Every plan, either size, contains:
   real interface (browser, API call, MCP client call, job trigger — see the
   method menu in [4-qa.md](4-qa.md)). Write steps for *every* interface the
   change touches. Not unit/integration tests — those belong to Build.
+  Tag steps a human can verify faster than any automation (flicker,
+  animation, subjective look/feel) as `human-verify` — stage 4 hands those
+  to the human instead of grinding on them.
 
   UI change:
   ```
