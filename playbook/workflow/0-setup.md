@@ -20,19 +20,29 @@ and triage; nothing here is about *how* to solve anything.
    comments (Linear's `get_issue` returns only the description) — fetch the
    comment thread explicitly (`list_comments` or your integration's
    equivalent) and read all of it before forming a view of the work.
-2. **Mark the ticket started** — move it to In Progress (or your tracker's
+2. **If it's a BUG: get the reproduction steps straight first.** Before any
+   planning, establish concrete repro steps — from the ticket/comments if
+   they're there, otherwise by reproducing it yourself end-to-end, as close
+   to how the user hit it as possible (preview/dev environment, real
+   interface). A bug you can't reproduce is a bug you can't prove fixed —
+   the repro steps become the core of the plan's QA test plan. Only if
+   reproduction is genuinely impossible (transient conditions, production
+   data or access you don't have) record *why* and what evidence stands in
+   instead (logs, traces, screenshots from the reporter) — and say so
+   explicitly rather than quietly planning a fix from a description.
+3. **Mark the ticket started** — move it to In Progress (or your tracker's
    equivalent) if it isn't already; don't rely on push-triggered automation,
    which fires much later than the work actually starts.
-3. **Get on the ticket's branch.** Use the branch name Linear generated for
+4. **Get on the ticket's branch.** Use the branch name Linear generated for
    the ticket (the "copy git branch name" value). Never work on `main`.
    - If a placeholder branch was created for you (e.g. `stream/<ticket-id>`),
      rename it to the Linear branch name: `git branch -m <old> <new>`.
    - If you (or the tool) already picked a deliberate custom name, keep it.
-4. **Persist the context in the repo** so any tool or person can resume:
+5. **Persist the context in the repo** so any tool or person can resume:
    - Ticket summary → keep it with your working notes or at the top of the
      plan file (next stage).
    - The plan itself lives at `docs/plans/<ticket-id>.md` (stage 1).
-5. **Summarize back**: state the ticket's goal and your initial understanding
+6. **Summarize back**: state the ticket's goal and your initial understanding
    in one or two sentences before planning. If that summary is wrong, better
    to find out now.
 
