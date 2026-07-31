@@ -23,8 +23,10 @@ and triage; nothing here is about *how* to solve anything.
 2. **If it's a BUG: get the reproduction steps straight first.** Before any
    planning, establish concrete repro steps — from the ticket/comments if
    they're there, otherwise by reproducing it yourself end-to-end, as close
-   to how the user hit it as possible (preview/dev environment, real
-   interface). A bug you can't reproduce is a bug you can't prove fixed —
+   to how the user hit it as possible. Repro env: the one the user hit it
+   in (per the ticket), or the branch's Railway preview — open the draft PR
+   early; it deploys main-equivalent code until you push fixes, and the same
+   steps on the same env later verify the fix. A bug you can't reproduce is a bug you can't prove fixed —
    the repro steps become the core of the plan's QA test plan. Only if
    reproduction is genuinely impossible (transient conditions, production
    data or access you don't have) record *why* and what evidence stands in
