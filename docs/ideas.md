@@ -66,3 +66,18 @@ Fix: make chrome-devtools MCP reliably present in every stream session (register
 the stream's `.mcp.json` / sync-skills-style, like the flat-skills fix), so the
 preferred authed path actually works and playwright stays a true last resort. Sharpen
 the skill wording so a fall-through is loud (say *why* it fell through), not silent.
+
+## 2026-07-31 · Corrupt state.json bricks rclean (and rstatus)
+`rclean` reads a stream's `.claude/rdev/state.json` via `jq` up front (mode, pr_number,
+branch, promoted). If that JSON is malformed, jq errors and rclean bails **without
+removing anything** — the worktree/branch/tab get stranded and can't be closed through
+the normal path. Hit 2026-07-31 on `tiptap-ai-server-toolkit-experiment`: state.json
+had a parse error (~line 52), so rclean choked and left the worktree; had to remove it
+by hand (`git worktree remove --force` + `git branch -D` + `rdev-mux kill --tab`). Same
+corruption also makes `rstatus` print the stream with no stage (jq errors mid-table).
+Fix: harden `rclean` (and rstatus's per-stream read) to tolerate an unparseable
+state.json — fall back to sane defaults (mode=worktree, derive branch from git) and
+still remove the worktree/branch/tab, or at least fail with a clear "corrupt state,
+re-run with --force-nostate" path instead of a raw jq error. Bonus: a `state.json`
+write that's atomic (write-temp-then-rename) would stop the corruption happening when a
+coordinator is killed mid-write.
