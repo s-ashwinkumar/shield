@@ -19,6 +19,9 @@ Options:
   --from <stage>      Stage to resume from (default: build)
                       Stages: plan, build, code_review, pr_comments
   --pr <number>       PR number (to find the branch if state is missing)
+  -r, --runner <cmd>  Agent CLI to drive the stream (default: the stream's
+                      recorded runner from state.json, else claude). Passing a
+                      different runner here IS the switch mechanism (see rswitch).
   --local             Work on main repo (default if no worktree exists)
   --worktree          Work in a worktree
   --session <name>    tmux session (default: current session)
@@ -33,6 +36,7 @@ FROM_STAGE="build"
 PR_NUMBER=""
 SESSION_FLAG=""
 GOD=false
+RUNNER_FLAG=
 MODE_FLAG=""
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --worktree) MODE_FLAG="worktree"; shift ;;
     --session) SESSION_FLAG="$2"; shift 2 ;;
     --god) GOD=true; shift ;;
+    -r|--runner) RUNNER_FLAG="$2"; shift 2 ;;
     -*) echo "Unknown option: $1"; usage ;;
     *) NAME="$1"; shift ;;
   esac
@@ -297,10 +302,19 @@ if [[ -n "$P0" ]]; then
     exit 0
   fi
   STATE_F="$WORK_DIR/.claude/rdev/state.json"
+  RUNNER="claude"
+  [[ -f "$STATE_F" ]] && RUNNER="$(jq -r '.runner // "claude"' "$STATE_F" 2>/dev/null)"
+  [[ -n "$RUNNER_FLAG" ]] && RUNNER="$RUNNER_FLAG"
   if [[ -f "$STATE_F" ]]; then
-    jq --arg p "$P0" '.herdr = (.herdr // {}) + {pane: $p}' "$STATE_F" > "$STATE_F.tmp" && mv "$STATE_F.tmp" "$STATE_F"
+    jq --arg p "$P0" --arg r "$RUNNER" '.herdr = (.herdr // {}) + {pane: $p} | .runner = $r' "$STATE_F" > "$STATE_F.tmp" && mv "$STATE_F.tmp" "$STATE_F"
   fi
-  rdev-mux pane-run --pane "$P0" --text "cd $WORK_DIR && claude --agent coordinator $PERM_FLAG --remote-control rdev:$NAME -n rdev:$NAME; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true"
+  if [[ "$RUNNER" == "claude" ]]; then
+    rdev-mux pane-run --pane "$P0" --text "cd $WORK_DIR && claude --agent coordinator $PERM_FLAG --remote-control rdev:$NAME -n rdev:$NAME; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true"
+  else
+    RESUME_PROMPT="Read .claude/rdev/playbook/workflow.md, then the plan in docs/plans/ for ticket $NAME and its Progress section; resume at the recorded stage and round — do not restart. Keep Progress updated."
+    [[ "$GOD" == "true" ]] && RESUME_PROMPT="$RESUME_PROMPT Autonomy: mode autonomous — no optional pauses."
+    rdev-mux pane-run --pane "$P0" --text "cd $WORK_DIR && $RUNNER $(printf %q "$RESUME_PROMPT"); terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true"
+  fi
 fi
 rdev-mux tab-focus --tab "$TAB_ID" >/dev/null 2>&1 || true
 

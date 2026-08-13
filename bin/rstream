@@ -26,6 +26,10 @@ Options:
   --session <name>    tmux session to use (default: current session)
   --base <branch>     Base branch (default: main)
   --review-loops <n>  Max code review iterations (default: $MAX_REVIEW_LOOPS)
+  -r, --runner <cmd>  Agent CLI to drive the stream (default: claude, or RDEV_RUNNER
+                      in ~/.rdev/config). Non-claude runners (codex, opencode, ...)
+                      are launched with a playbook-direct kickoff prompt; fleet
+                      monitoring/relay is best-effort for them (herdr tracks claude).
   -h, --help          Show this help
 EOF
   exit 0
@@ -38,6 +42,7 @@ BASE="main"
 LOCAL=false
 DESIGN=false
 GOD=false
+RUNNER="${RDEV_RUNNER:-claude}"
 NAME_OK=false
 REVIEW_LOOPS="$MAX_REVIEW_LOOPS"
 SESSION_FLAG=""
@@ -53,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --session) SESSION_FLAG="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     --review-loops) REVIEW_LOOPS="$2"; shift 2 ;;
+    -r|--runner) RUNNER="$2"; shift 2 ;;
     -*) echo "Unknown option: $1"; usage ;;
     *) TICKET="$1"; shift ;;
   esac
@@ -368,21 +374,33 @@ if [[ -n "$LIVE_PANE" ]]; then
   exit 0
 fi
 
-COORD_CMD="claude --agent coordinator $PERM_FLAG --remote-control rdev:$NAME -n rdev:$NAME 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'"
+if [[ "$RUNNER" == "claude" ]]; then
+  COORD_CMD="claude --agent coordinator $PERM_FLAG --remote-control rdev:$NAME -n rdev:$NAME 'Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning.'"
+else
+  # Non-claude runner: no coordinator bindings — kick off straight from the
+  # tool-neutral playbook (the pilot pattern). The runner value is used as-is
+  # as the command; the kickoff prompt is passed as one argument.
+  KICKOFF="Read .claude/rdev/playbook/workflow.md and follow that workflow for ticket $TICKET, starting at stage 0. Keep the plan's Progress section updated at every stage transition."
+  [[ "$GOD" == "true" ]] && KICKOFF="$KICKOFF Autonomy: mode autonomous (see workflow.md) — no optional pauses."
+  COORD_CMD="$RUNNER $(printf %q "$KICKOFF")"
+fi
 if [[ -n "$P0" ]]; then
   rdev-mux pane-run --pane "$P0" --text "$COORD_CMD"
-else
+elif [[ "$RUNNER" == "claude" ]]; then
   # Fallback: no root pane id — start as a tracked agent (Herdr default layout).
   rdev-mux agent-start --name "$NAME" --cwd "$WORK_DIR" --tab "$TAB_ID" -- \
     claude --agent coordinator $PERM_FLAG --remote-control "rdev:$NAME" -n "rdev:$NAME" \
     "Start. Read state, fetch ticket $TICKET from Linear, present summary, and begin planning."
+else
+  echo "No pane available to launch runner '$RUNNER' — open the tab and run:"
+  echo "  $COORD_CMD"
 fi
 
 # --- Record the stream's herdr address in state (firstmate pattern: record the
 # endpoint at spawn; never rediscover it at use). Refreshed on every launch/resume.
 STATE_F="$WORK_DIR/.claude/rdev/state.json"
 if [[ -n "$P0" && -f "$STATE_F" ]]; then
-  jq --arg t "$TAB_ID" --arg p "$P0" '.herdr = {tab: $t, pane: $p}' "$STATE_F" > "$STATE_F.tmp" \
+  jq --arg t "$TAB_ID" --arg p "$P0" --arg r "$RUNNER" '.herdr = {tab: $t, pane: $p} | .runner = $r' "$STATE_F" > "$STATE_F.tmp" \
     && mv "$STATE_F.tmp" "$STATE_F"
 fi
 

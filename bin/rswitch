@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# rswitch -- Move a live stream to a different agent runner (claude <-> codex <-> ...)
+# The Progress section in the plan file carries position across tools; this just
+# closes the current session cleanly and relaunches via rresume with the new runner.
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_rdev_lib.sh"
+rdev_load_config
+
+usage() {
+  cat <<EOF
+Usage: rswitch <stream> <runner> [--yes]
+
+Switch which agent CLI drives a stream, e.g.:
+  rswitch USENG-1234 codex     # hand a claude stream to codex
+  rswitch USENG-1234 claude    # take it back
+
+Closes the stream's current tab (the running agent dies with it), records the
+new runner in state, and relaunches via rresume — the new agent resumes from
+the plan's Progress section, not from the old session's memory.
+
+Options:
+  --yes   Skip the confirmation prompt (required when non-interactive)
+EOF
+  exit 0
+}
+
+STREAM=""; RUNNER=""; YES=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage ;;
+    --yes) YES=true ;;
+    -*) echo "Unknown option: $arg"; usage ;;
+    *) if [[ -z "$STREAM" ]]; then STREAM="$arg"; elif [[ -z "$RUNNER" ]]; then RUNNER="$arg"; else usage; fi ;;
+  esac
+done
+[[ -z "$STREAM" || -z "$RUNNER" ]] && usage
+
+WORK_DIR="$(rdev_resolve_work_dir "$STREAM")"
+STATE_F="$WORK_DIR/.claude/rdev/state.json"
+if [[ ! -f "$STATE_F" ]]; then
+  echo "Error: no state for stream '$STREAM' ($STATE_F missing) — nothing to switch."
+  echo "Use: rstream $STREAM --runner $RUNNER  (new stream) or rresume $STREAM --runner $RUNNER"
+  exit 1
+fi
+OLD_RUNNER="$(jq -r '.runner // "claude"' "$STATE_F" 2>/dev/null)"
+if [[ "$OLD_RUNNER" == "$RUNNER" ]]; then
+  echo "Stream '$STREAM' is already driven by '$RUNNER'. Nothing to do."
+  exit 0
+fi
+
+# Warn if the plan has no Progress section — the new runner resumes from it.
+PLAN_DIR="$WORK_DIR/docs/plans"
+if ! grep -rql '^## Progress' "$PLAN_DIR"/"$STREAM"*.md 2>/dev/null; then
+  echo "⚠️  No '## Progress' section found in $PLAN_DIR/$STREAM*.md."
+  echo "   The new runner resumes from Progress; without it, it may restart stages."
+  echo "   Best: ask the current session to update Progress before switching."
+fi
+
+if [[ "$YES" != "true" ]]; then
+  echo "Switch '$STREAM': $OLD_RUNNER → $RUNNER"
+  echo "This CLOSES the stream's current tab (running agent dies; unsaved session context is lost)."
+  read -rp "Continue? [y/N] " confirm
+  [[ "$confirm" == [yY] ]] || { echo "Aborted."; exit 1; }
+fi
+
+# Close the current tab if one exists (same verb rclean uses).
+TAB_ID="$(jq -r '.herdr.tab // ""' "$STATE_F" 2>/dev/null)"
+[[ -z "$TAB_ID" ]] && TAB_ID="$(rdev-mux tab-find --name "$STREAM" 2>/dev/null || true)"
+if [[ -n "$TAB_ID" ]]; then
+  rdev-mux kill --tab "$TAB_ID" >/dev/null 2>&1 && echo "Closed tab $TAB_ID ($OLD_RUNNER session ended)."
+  sleep 1
+fi
+
+# Record the new runner (rresume also records it; belt and suspenders).
+jq --arg r "$RUNNER" '.runner = $r' "$STATE_F" > "$STATE_F.tmp" && mv "$STATE_F.tmp" "$STATE_F"
+
+exec "$SCRIPT_DIR/rresume" "$STREAM" --runner "$RUNNER"

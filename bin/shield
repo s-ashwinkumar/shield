@@ -16,6 +16,7 @@ case "$sub" in
   forward)  exec "$SCRIPT_DIR/rforward"    "$@" ;;
   resume)   exec "$SCRIPT_DIR/rresume"     "$@" ;;
   clean)    exec "$SCRIPT_DIR/rclean"      "$@" ;;
+  switch)   exec "$SCRIPT_DIR/rswitch"     "$@" ;;
   send)     exec "$SCRIPT_DIR/rsend"       "$@" ;;
   peek)     exec "$SCRIPT_DIR/rpeek"       "$@" ;;
   mux)      exec "$SCRIPT_DIR/rdev-mux"    "$@" ;;
@@ -31,7 +32,7 @@ S.H.I.E.L.D. — Strategic Herding, Intervention, Escalation & LLM Dispatch
   shield browser           ensure the shared QA Chrome (:9222)
   shield send <stream> <msg>          relay a message into a stream's live agent
   shield peek <stream> [n]            read the tail of a stream's pane
-  shield build|forward|resume|clean   stream lifecycle
+  shield build|forward|resume|clean|switch   stream lifecycle
   shield mux <verb>        substrate adapter (herdr)
 
 Legacy r*-prefixed commands still work; rt* is the retired tmux generation.
