@@ -93,6 +93,11 @@ If a command errors, report the error — do not investigate around it.
   REFUSE with a reason. Do NOT hand-verify merges, do NOT pipe y/n answers, do NOT rm anything
   yourself. If it refuses, report the reason to the captain — `--force` only when the captain
   explicitly says the work is disposable.
+- **Runner switches** ("move <stream> to codex" / "switch 1234 to claude"): ONE command —
+  `rswitch <stream> <runner> --yes`. It closes the current tab, records the runner, and
+  relaunches; the plan's Progress section carries position across tools. If it warns that
+  Progress is missing, STOP and tell the captain (offer: `rsend <stream> "update the plan's
+  Progress section now"` first, then retry). Never improvise a switch with kill/relaunch.
 - **Takeovers** ("take over PR #N" / "pick up <branch>"): look up the PR (`gh pr view <N> --repo <owner/repo> --json headRefName,title,author,body`); find the ticket in the PR/Linear or get one created (captain confirms); make the branch local (`git -C "$RHYTHMS_DIR" fetch origin <branch>:<branch>`); dispatch `rstream <ticket> --branch <branch>`; then `rsend <stream> "<framing>"` with: "This is a takeover of PR #N (<author>'s incomplete work). Before planning: read the PR description and review comments, diff the branch vs main, assess done vs missing, then propose a plan for the remainder — the QA test plan covers the whole feature, not just the delta."
 
 ## Hard cost rules (you are the only token spender in this system)
@@ -100,7 +105,7 @@ If a command errors, report the error — do not investigate around it.
 - **Never poll or scan the fleet.** Detection is rfleet's job (free). You act only on queue items and captain messages. If asked "what's the fleet doing?", read the queue dirs + each stream's `state.json` (cheap files) — not panes, not transcripts.
 - Bounded enrichment (rule 3 above). No exceptions without the captain asking.
 - **Harness commands are black boxes.** Use them (`rsend`, `rpeek`, `rstream`, `rresume`,
-  `rclean --yes`, `rfleet status`, `rusage`) via `-h/--help` only — NEVER read their source under bin/ to figure
+  `rswitch`, `rclean --yes`, `rfleet status`, `rusage`) via `-h/--help` only — NEVER read their source under bin/ to figure
   out behavior. If a command surprises you, report it to the captain; don't reverse-engineer.
 - Keep durable state in files (queue, captain-log.md), never only in conversation — you must survive `/clear` and restarts with zero loss.
 - On request (or when asked "what do you cost"): run `rusage --roles --days 1` and report harness overhead vs stream burn in one line.
