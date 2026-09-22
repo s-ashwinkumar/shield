@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# shield focus -- focus a stream's herdr tab (and bring the hosting app forward).
+#   shield focus <stream>
+# Used as the click-action of shield notify notifications.
+set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+set +e
+
+[[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { echo "Usage: shield focus <stream>"; exit 0; }
+STREAM="$1"
+shield_resolve_stream "$STREAM"
+WT="$WORK_DIR"
+
+TAB="$(jq -r '.herdr.tab // empty' "$WT/.claude/shield/state.json" 2>/dev/null)"
+if [[ -z "$TAB" ]]; then
+  TAB="$(mux list 2>/dev/null | jq -r --arg c "$WT" 'first(.result.agents[]|select(.cwd==$c)|.tab_id)//empty' 2>/dev/null)"
+fi
+[[ -n "$TAB" ]] && herdr tab focus "$TAB" >/dev/null 2>&1
+
+# Bring the hosting app forward (set SHIELD_TERMINAL_APP in ~/.config/shield/config, e.g. "Herdr" / "Ghostty" / "iTerm")
+APP="${SHIELD_TERMINAL_APP:-}"
+[[ -n "$APP" ]] && open -a "$APP" 2>/dev/null
+exit 0

@@ -1,9 +1,9 @@
 {
-  "name": "rdev-init",
+  "name": "shield-init",
   "version": "0.1.0",
-  "description": "Install the rdev AI development pipeline into your project — works with Claude Code, Cursor, and Codex CLI.",
+  "description": "Install the shield AI development pipeline into your project — works with Claude Code, Cursor, and Codex CLI.",
   "bin": {
-    "rdev-init": "./bin/rdev-init.js"
+    "shield-init": "./bin/shield-init.js"
   },
   "files": [
     "bin/",
@@ -34,6 +34,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/GetRhythms/rdev.git"
+    "url": "https://github.com/s-ashwinkumar/shield.git"
   }
 }

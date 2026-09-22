@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# rforward -- Advance pipeline past UX review to code review
+# shield forward -- Advance pipeline past UX review to code review
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-source "$SCRIPT_DIR/_rdev_lib.sh"
-rdev_load_config
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
 
 usage() {
   cat <<EOF
-Usage: rforward <name>
+Usage: shield forward <name>
 
 Advance the pipeline from UX review to code review. Tells the coordinator to start the review loop.
 
@@ -35,10 +35,10 @@ if [[ -z "$NAME" ]]; then
   usage
 fi
 
-WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+shield_resolve_stream "$NAME"
 
-# Read state — rforward is flexible, works from any pre-done stage
-STATE=$(rdev_read_state "$NAME")
+# Read state — shield forward is flexible, works from any pre-done stage
+STATE=$(shield_read_state "$NAME")
 STAGE=$(echo "$STATE" | jq -r '.stage // "unknown"')
 if [[ "$STAGE" == "done" ]]; then
   echo "Stream '$NAME' is already done."
@@ -46,12 +46,12 @@ if [[ "$STAGE" == "done" ]]; then
 fi
 
 # Update state
-rdev_update_state "$NAME" "stage" "code_review"
+shield_update_state "$NAME" "stage" "code_review"
 
 # Check the Herdr tab exists
-TAB_ID="$(rdev_stream_tab "$NAME")"
+TAB_ID="$(shield_stream_tab "$NAME")"
 if [[ -z "$TAB_ID" ]]; then
-  echo "Error: Herdr tab '$NAME' not found. Start it first: rstream $NAME"
+  echo "Error: Herdr tab '$NAME' not found. Start it first: shield stream $NAME"
   exit 1
 fi
 
@@ -59,7 +59,7 @@ MAX_LOOPS=$(echo "$STATE" | jq -r '.max_review_loops // 3')
 
 # Launch coordinator in review mode (new session with skip-permissions)
 # The prompt argument is the initial user message — coordinator will act on it immediately
-rdev_coord_msg "$TAB_ID" "Start Stage 3: CODE REVIEW. Dispatch the codex:codex-rescue subagent to review the diff vs main. If it finds Critical or Important issues, dispatch the builder to fix them, then re-review with codex. Loop up to $MAX_LOOPS times. Then proceed to Stage 4 (PR) and Stage 5 (PR comments). Fully autonomous — no user gates."
+shield_coord_msg "$TAB_ID" "Start Stage 3: CODE REVIEW per the playbook and your fresh-eyes reviewer binding (diff vs $BASE_BRANCH). Fix Critical/Important findings with the builder and re-review, up to $MAX_LOOPS loops. Then continue through QA and Ship. Fully autonomous — no user gates."
 
 echo "Code review started for '$NAME' (max $MAX_LOOPS loops)."
 echo "You'll get a notification when the PR is ready."

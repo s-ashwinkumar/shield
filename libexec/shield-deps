@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# shield deps -- prepare container + share/install dependencies for a worktree,
+# then run the project's setup hook.
+#
+# Runs in the stream's COMPANION pane (dispatched by `shield stream` after the
+# coordinator launches) so planning starts immediately while deps install.
+# Writes .claude/shield/deps.ready when done — the coordinator waits on that
+# marker before running local tests. What to share/install comes from DEPS in
+# the project's .shield/config; repo-specific prep goes in its setup hook.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+set +e  # lib enables -e; each step here is best-effort
+
+WT="${1:?usage: shield deps <worktree-dir>}"
+[[ -d "$WT" ]] || { echo "shield deps: no such worktree: $WT" >&2; exit 1; }
+ROOT="$(shield_project_root "$WT")" || { echo "shield deps: $WT is not in a git repo" >&2; exit 1; }
+shield_use_project "$ROOT"
+NAME="$(jq -r '.name // empty' "$WT/$SHIELD_STATE_REL/state.json" 2>/dev/null)"
+NAME="${NAME:-$(basename "$WT")}"
+
+rm -f "$WT/$SHIELD_STATE_REL/deps.ready"
+if [[ -n "$CONTAINER" ]]; then
+  echo "shield deps: preparing container '$CONTAINER' (git-path alias)..."
+  shield_container_prep
+fi
+echo "shield deps: sharing/installing dependencies from mainline..."
+shield_share_deps "$WT"
+shield_run_setup_hook "$WT" "$NAME"
+mkdir -p "$WT/$SHIELD_STATE_REL"
+date +%s > "$WT/$SHIELD_STATE_REL/deps.ready"
+echo "shield deps: ✅ DONE — dependencies ready ($NAME)."

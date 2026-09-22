@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# rdev-mux -- substrate adapter. rdev scripts call this instead of tmux/herdr.
-# Backend selected by RDEV_MUX_BACKEND: "herdr" (default) or "echo" (tests/dry-run).
+# shield mux -- substrate adapter. shield commands call this instead of herdr directly.
+# Backend selected by SHIELD_MUX_BACKEND: "herdr" (default) or "echo" (tests/dry-run).
 set -euo pipefail
 
-RDEV_MUX_BACKEND="${RDEV_MUX_BACKEND:-herdr}"
+SHIELD_MUX_BACKEND="${SHIELD_MUX_BACKEND:-herdr}"
 
 # _mux_run <backend-label> [args...]
 # echo backend: print the full command it *would* run (dry-run / test).
 # herdr backend: exec it (label is the binary name).
 _mux_run() {
-  case "$RDEV_MUX_BACKEND" in
+  case "$SHIELD_MUX_BACKEND" in
     echo)  printf '%s' "$*" ;;
     herdr) command "$@" ;;
-    *) echo "rdev-mux: unknown RDEV_MUX_BACKEND '$RDEV_MUX_BACKEND'" >&2; return 2 ;;
+    *) echo "shield mux: unknown SHIELD_MUX_BACKEND '$SHIELD_MUX_BACKEND'" >&2; return 2 ;;
   esac
 }
 
 # _jq <jq-args...> : herdr backend runs jq over the JSON on stdin; echo backend
 # passes the command string straight through (so tests assert command construction).
 _jq() {
-  if [[ "$RDEV_MUX_BACKEND" == "herdr" ]]; then jq -r "$@"; else cat; fi
+  if [[ "$SHIELD_MUX_BACKEND" == "herdr" ]]; then jq -r "$@"; else cat; fi
 }
 
 # flag parser: sets name/cwd/tab/target/text/dir/ratio; argv after `--` lands in REST
@@ -39,7 +39,7 @@ _parse() {
       --ratio) ratio="$2"; shift 2 ;;
       --lines) lines="$2"; shift 2 ;;
       --) shift; REST=("$@"); break ;;
-      *) echo "rdev-mux: bad flag '$1'" >&2; return 2 ;;
+      *) echo "shield mux: bad flag '$1'" >&2; return 2 ;;
     esac
   done
 }
@@ -98,5 +98,5 @@ case "$verb" in
                  | _jq --arg t "$tab" 'first(.result.agents[]|select(.tab_id==$t)|.pane_id)//empty' ;;
   pane-read)   _parse "$@"; _mux_run herdr pane read "$pane" --source visible --lines "${lines:-20}" ;;
   kill)        _parse "$@"; _mux_run herdr tab close "$tab" ;;
-  *) echo "rdev-mux: unknown verb '$verb'" >&2; exit 2 ;;
+  *) echo "shield mux: unknown verb '$verb'" >&2; exit 2 ;;
 esac

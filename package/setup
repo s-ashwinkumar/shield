@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# rdev setup — install the AI development pipeline for your project
+# shield setup — install the AI development pipeline for your project
 # Supports: Claude Code, Cursor, Codex CLI
 set -euo pipefail
 
-RDEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHIELD_PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
@@ -17,18 +17,18 @@ info() { echo -e "  ${BLUE}→${NC} $1"; }
 warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 
 echo ""
-echo "rdev — AI Development Pipeline Setup"
+echo "shield — AI Development Pipeline Setup"
 echo "═════════════════════════════════════"
 echo ""
 echo "Project: $PROJECT_DIR"
 echo ""
 
 # ─── Step 1: Generate process docs from canonical skills/ ────────────────
-# Each skills/<name>/SKILL.md becomes docs/rdev/<name>.md (frontmatter stripped).
+# Each skills/<name>/SKILL.md becomes docs/shield/<name>.md (frontmatter stripped).
 # README.md is copied verbatim as the pipeline entry-point doc.
 
-info "Generating process docs to docs/rdev/"
-mkdir -p "$PROJECT_DIR/docs/rdev"
+info "Generating process docs to docs/shield/"
+mkdir -p "$PROJECT_DIR/docs/shield"
 
 strip_frontmatter() {
   # Drop the leading --- ... --- block, keep everything after.
@@ -39,23 +39,23 @@ strip_frontmatter() {
 }
 
 count=0
-for skill_dir in "$RDEV_DIR/skills"/*/; do
+for skill_dir in "$SHIELD_PKG_DIR/skills"/*/; do
   name="$(basename "$skill_dir")"
   if [[ -f "$skill_dir/SKILL.md" ]]; then
-    strip_frontmatter "$skill_dir/SKILL.md" > "$PROJECT_DIR/docs/rdev/$name.md"
+    strip_frontmatter "$skill_dir/SKILL.md" > "$PROJECT_DIR/docs/shield/$name.md"
     count=$((count + 1))
   fi
 done
 
 # Entry-point doc
-cp "$RDEV_DIR/process/README.md" "$PROJECT_DIR/docs/rdev/README.md"
+cp "$SHIELD_PKG_DIR/process/README.md" "$PROJECT_DIR/docs/shield/README.md"
 ok "Process docs installed ($count generated + README.md)"
 
 # Copy QA context template if it doesn't exist
-if [[ ! -f "$PROJECT_DIR/docs/rdev/qa-context.md" ]]; then
-  if [[ -f "$RDEV_DIR/templates/qa-context.example.md" ]]; then
-    cp "$RDEV_DIR/templates/qa-context.example.md" "$PROJECT_DIR/docs/rdev/qa-context.md"
-    ok "QA context template installed (customize docs/rdev/qa-context.md for your app)"
+if [[ ! -f "$PROJECT_DIR/docs/shield/qa-context.md" ]]; then
+  if [[ -f "$SHIELD_PKG_DIR/templates/qa-context.example.md" ]]; then
+    cp "$SHIELD_PKG_DIR/templates/qa-context.example.md" "$PROJECT_DIR/docs/shield/qa-context.md"
+    ok "QA context template installed (customize docs/shield/qa-context.md for your app)"
   fi
 fi
 
@@ -75,16 +75,16 @@ if command -v claude &>/dev/null; then
   # Project-level skills + agents — copied from canonical package/skills and package/agents.
   # (Claude Code's .claude/ layout matches our canonical layout, so no transformation is needed.)
   mkdir -p "$PROJECT_DIR/.claude/skills" "$PROJECT_DIR/.claude/agents"
-  cp -r "$RDEV_DIR/skills/"* "$PROJECT_DIR/.claude/skills/"
-  cp "$RDEV_DIR/agents/"*.md "$PROJECT_DIR/.claude/agents/"
+  cp -r "$SHIELD_PKG_DIR/skills/"* "$PROJECT_DIR/.claude/skills/"
+  cp "$SHIELD_PKG_DIR/agents/"*.md "$PROJECT_DIR/.claude/agents/"
   ok "Claude Code skills installed (.claude/skills/)"
   ok "Claude Code agents installed (.claude/agents/)"
 
   # Also install user-level so it works outside this project
   if [[ -d "$HOME/.claude" ]]; then
-    mkdir -p "$HOME/.claude/skills/rdev"
-    cp -r "$RDEV_DIR/skills/"* "$HOME/.claude/skills/rdev/" 2>/dev/null || true
-    ok "Claude Code user-level skills installed (~/.claude/skills/rdev/)"
+    mkdir -p "$HOME/.claude/skills/shield"
+    cp -r "$SHIELD_PKG_DIR/skills/"* "$HOME/.claude/skills/shield/" 2>/dev/null || true
+    ok "Claude Code user-level skills installed (~/.claude/skills/shield/)"
   fi
 
   # Check for codex plugin (for cross-model review)
@@ -106,16 +106,16 @@ if [[ -d "$PROJECT_DIR/.cursor" ]] || command -v cursor &>/dev/null; then
   info "Cursor detected"
 
   mkdir -p "$PROJECT_DIR/.cursor/rules"
-  cp "$RDEV_DIR/adapters/cursor/rules/rdev.md" "$PROJECT_DIR/.cursor/rules/"
-  ok "Cursor rules installed (.cursor/rules/rdev.md)"
+  cp "$SHIELD_PKG_DIR/adapters/cursor/rules/shield.md" "$PROJECT_DIR/.cursor/rules/"
+  ok "Cursor rules installed (.cursor/rules/shield.md)"
 else
   # Check if there's a .cursorignore or other cursor files
   if ls "$PROJECT_DIR/.cursor"* &>/dev/null 2>&1; then
     TOOLS_FOUND=$((TOOLS_FOUND + 1))
     info "Cursor project detected"
     mkdir -p "$PROJECT_DIR/.cursor/rules"
-    cp "$RDEV_DIR/adapters/cursor/rules/rdev.md" "$PROJECT_DIR/.cursor/rules/"
-    ok "Cursor rules installed (.cursor/rules/rdev.md)"
+    cp "$SHIELD_PKG_DIR/adapters/cursor/rules/shield.md" "$PROJECT_DIR/.cursor/rules/"
+    ok "Cursor rules installed (.cursor/rules/shield.md)"
   fi
 fi
 
@@ -125,7 +125,7 @@ if command -v codex &>/dev/null; then
   info "Codex CLI detected"
 
   mkdir -p "$PROJECT_DIR/.codex"
-  cp "$RDEV_DIR/adapters/codex/instructions.md" "$PROJECT_DIR/.codex/"
+  cp "$SHIELD_PKG_DIR/adapters/codex/instructions.md" "$PROJECT_DIR/.codex/"
   ok "Codex instructions installed (.codex/instructions.md)"
 else
   # Skip silently — codex is optional
@@ -134,7 +134,7 @@ fi
 
 if [[ "$TOOLS_FOUND" -eq 0 ]]; then
   warn "No supported tools detected (Claude Code, Cursor, or Codex CLI)"
-  echo "    Process docs are still installed at docs/rdev/"
+  echo "    Process docs are still installed at docs/shield/"
   echo "    Point any AI tool at those files to use the pipeline"
 fi
 
@@ -143,37 +143,37 @@ fi
 echo ""
 info "Setting up .gitignore for pipeline state"
 
-# .rdev/ is where state lives (universal, not .claude/rdev/)
-if ! grep -q "^\.rdev/" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
+# .shield/state/ is where state lives (universal, not .claude/shield/)
+if ! grep -q "^\.shield/state/" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
   echo "" >> "$PROJECT_DIR/.gitignore"
-  echo "# rdev pipeline state (personal, not shared)" >> "$PROJECT_DIR/.gitignore"
-  echo ".rdev/" >> "$PROJECT_DIR/.gitignore"
-  ok "Added .rdev/ to .gitignore"
+  echo "# shield pipeline state (personal, not shared)" >> "$PROJECT_DIR/.gitignore"
+  echo ".shield/state/" >> "$PROJECT_DIR/.gitignore"
+  ok "Added .shield/state/ to .gitignore"
 else
-  ok ".rdev/ already in .gitignore"
+  ok ".shield/state/ already in .gitignore"
 fi
 
-# ─── Step 4: Add rdev section to project instructions ────────────────────
+# ─── Step 4: Add shield section to project instructions ────────────────────
 
 echo ""
 
 # Check for CLAUDE.md
 if [[ -f "$PROJECT_DIR/CLAUDE.md" ]]; then
-  if ! grep -q "rdev" "$PROJECT_DIR/CLAUDE.md" 2>/dev/null; then
-    info "Adding rdev section to CLAUDE.md"
+  if ! grep -q "shield" "$PROJECT_DIR/CLAUDE.md" 2>/dev/null; then
+    info "Adding shield section to CLAUDE.md"
     cat >> "$PROJECT_DIR/CLAUDE.md" << 'EOF'
 
-## rdev — Development Pipeline
+## shield — Development Pipeline
 
-This project uses the rdev development pipeline. Process docs are in `docs/rdev/`.
+This project uses the shield development pipeline. Process docs are in `docs/shield/`.
 
 Available commands: `/start`, `/build`, `/review`, `/ship`, `/fix-pr`, `/fix-ci`, `/qa`, `/status`
 
-Run `/start <ticket-id>` to begin working on a ticket. See `docs/rdev/README.md` for full docs.
+Run `/start <ticket-id>` to begin working on a ticket. See `docs/shield/README.md` for full docs.
 EOF
-    ok "Added rdev section to CLAUDE.md"
+    ok "Added shield section to CLAUDE.md"
   else
-    ok "CLAUDE.md already mentions rdev"
+    ok "CLAUDE.md already mentions shield"
   fi
 fi
 
@@ -181,24 +181,24 @@ fi
 
 echo ""
 echo "═════════════════════════════════════"
-echo -e "${GREEN}rdev installed!${NC}"
+echo -e "${GREEN}shield installed!${NC}"
 echo "═════════════════════════════════════"
 echo ""
-echo "  Process docs:  docs/rdev/"
+echo "  Process docs:  docs/shield/"
 [[ -d "$PROJECT_DIR/.claude/skills" ]] && echo "  Claude Code:   .claude/skills/ + .claude/agents/"
-[[ -d "$PROJECT_DIR/.cursor/rules" ]] && echo "  Cursor:        .cursor/rules/rdev.md"
+[[ -d "$PROJECT_DIR/.cursor/rules" ]] && echo "  Cursor:        .cursor/rules/shield.md"
 [[ -d "$PROJECT_DIR/.codex" ]] && echo "  Codex CLI:     .codex/instructions.md"
 echo ""
-echo "  State:         .rdev/ (gitignored)"
+echo "  State:         .shield/state/ (gitignored)"
 echo "  Plans:         docs/plans/<ticket>.md (committed)"
 echo ""
 echo "Usage:"
-echo "  /start USENG-500        Start a ticket"
+echo "  /start ENG-500        Start a ticket"
 echo "  /build                  Build the plan"
 echo "  /review                 Cross-model code review"
 echo "  /ship                   Create PR + handle comments"
 echo ""
 echo "Commit the changes to share with your team:"
-echo "  git add docs/rdev/ .claude/ .cursor/ .codex/ .gitignore CLAUDE.md"
-echo "  git commit -m 'Add rdev AI development pipeline'"
+echo "  git add docs/shield/ .claude/ .cursor/ .codex/ .gitignore CLAUDE.md"
+echo "  git commit -m 'Add shield AI development pipeline'"
 echo ""

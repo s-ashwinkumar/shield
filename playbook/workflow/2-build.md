@@ -46,14 +46,13 @@ can't escape silently again.
 - **Tier 2 — DB-backed tests.** The question to answer first: **is your test
   database isolated from other concurrent work?**
   - *Isolated* — a single checkout with its own dev container, or a worktree
-    whose environment gives it its own database (the repo's
-    `rhythms-new-worktree` skill sets up an isolated stack; some harnesses
-    key a per-worktree DB off an env suffix like `RDEV_DB_SUFFIX`). → Run
-    normally: railsapi `RAILS_ENV=test bundle exec rake db:prepare` then
-    rspec per railsapi/AGENTS.md; mlai: create/migrate its dev DB, then the
-    mlai test command from mlai/AGENTS.md.
+    whose environment gives it its own database (shield runs the repo's
+    `.shield/setup` hook in each new worktree — the place to create a
+    per-worktree DB, e.g. named off `$SHIELD_STREAM`). → Run normally: the
+    test-DB prep and test command from each touched service's `AGENTS.md`
+    (in the dev container if the repo uses one).
   - *Shared* — multiple worktrees/branches pointing at one database (e.g. a
-    worktree reusing the mainline container's DB without a suffix). →
+    worktree reusing the base checkout's DB). →
     **never run destructive DB prep there**; get an isolated DB first, or
     fall back to CI (below).
 - **Tier 3 — real environment (running app / browser / API).** Not run
@@ -71,8 +70,8 @@ depends on the environment:
 - **Remote/cloud agent with no local test environment**: push the branch and
   open a **draft PR early** so CI runs the suites; "tests pass" means the
   CI checks on the branch are green. Don't claim tests pass without one of
-  these two proofs. (The early draft PR also warms up the Railway preview
-  that [stage 4 QA](4-qa.md) needs.)
+  these two proofs. (If the project has preview deployments, the early
+  draft PR also warms up the preview that [stage 4 QA](4-qa.md) needs.)
 
 ## Exit
 

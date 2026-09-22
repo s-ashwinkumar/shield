@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# shield peek -- read the last N lines of a stream's live agent pane. ONE command.
+#
+#   shield peek <stream> [lines=40]
+#
+# Read-only, always terminates.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+set +e
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 1 ]]; then
+  echo "Usage: shield peek <stream> [lines=40]   (read the tail of the stream's pane)"
+  exit 0
+fi
+
+STREAM="$1"; LINES="${2:-40}"
+shield_resolve_stream "$STREAM"
+WT="$WORK_DIR"
+[[ -d "$WT" ]] || { echo "shield peek: no such stream worktree: $STREAM" >&2; exit 2; }
+
+PANE="$(mux agent-cwd --cwd "$WT" 2>/dev/null)"
+if [[ -n "$PANE" ]]; then
+  mux pane-read --pane "$PANE" --lines "$LINES"
+  exit $?
+fi
+
+echo "shield peek: no live agent for '$STREAM'" >&2
+exit 3

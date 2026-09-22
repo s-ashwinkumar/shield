@@ -6,10 +6,10 @@ argument-hint: ""
 
 ## Pipeline Status
 
-Read `.claude/rdev/state.json` and print a summary:
+Read `.claude/shield/state.json` and print a summary:
 
 ```bash
-cat .claude/rdev/state.json 2>/dev/null
+cat .claude/shield/state.json 2>/dev/null
 ```
 
 If no state file, report "No active pipeline. Run `/start <ticket>` to begin."
@@ -27,7 +27,7 @@ Review loops: <done> / <max>
 God mode:   <yes/no>
 
 Plan:       docs/plans/<ticket>.md
-Reviews:    .claude/rdev/review-<ticket>-*.md
+Reviews:    .claude/shield/review-<ticket>-*.md
 ```
 
 Also check for any review files and summarize findings.

@@ -23,7 +23,7 @@ gh pr view --json number,url 2>/dev/null
 **If no PR**: Create with `gh pr create`.
 
 PR description should include:
-- Link to ticket (from `.claude/rdev/state.json`)
+- Link to ticket (from `.claude/shield/state.json`)
 - Summary from `docs/plans/<ticket>.md`
 - Key changes made
 - Number of review rounds completed
@@ -60,12 +60,12 @@ Update state: `"stage": "done"`
 
 Send notification (if terminal-notifier available):
 ```bash
-terminal-notifier -title "rdev" -message "PR ready: <url>" -sound default -group rdev 2>/dev/null || true
+terminal-notifier -title "shield" -message "PR ready: <url>" -sound default -group shield 2>/dev/null || true
 ```
 
 Print summary: PR URL, review rounds, comments addressed.
 
-Append learnings to `.claude/rdev/memory/learnings.md` if anything notable happened during this ticket.
+Append learnings to `.claude/shield/memory/learnings.md` if anything notable happened during this ticket.
 
 ## Rules
 - Always push before creating PR

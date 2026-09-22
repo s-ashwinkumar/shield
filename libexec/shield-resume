@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# rresume -- Resume work on a completed or paused stream
+# shield resume -- Resume work on a completed or paused stream
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-source "$SCRIPT_DIR/_rdev_lib.sh"
-rdev_load_config
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
 
 usage() {
   cat <<EOF
-Usage: rresume <name> [options]
+Usage: shield [-C <project>] resume <name> [options]
 
 Resume work on a stream that was previously completed or paused.
 Preserves existing state, plan, and review history.
@@ -21,7 +21,7 @@ Options:
   --pr <number>       PR number (to find the branch if state is missing)
   -r, --runner <cmd>  Agent CLI to drive the stream (default: the stream's
                       recorded runner from state.json, else claude). Passing a
-                      different runner here IS the switch mechanism (see rswitch).
+                      different runner here IS the switch mechanism (see shield switch).
   --local             Work on main repo (default if no worktree exists)
   --worktree          Work in a worktree
   --god               Run fully autonomous after resuming
@@ -62,14 +62,12 @@ case "$FROM_STAGE" in
   *) echo "Error: invalid stage '$FROM_STAGE'. Must be: plan, build, code_review, pr_comments"; exit 1 ;;
 esac
 
-rdev_ensure_session
+shield_ensure_session
 
-RDEV_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+# --- Find the project, work directory and branch ---
 
-# --- Find the work directory and branch ---
-
-WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
-STATE_FILE="$WORK_DIR/.claude/rdev/state.json"
+shield_resolve_stream "$NAME"
+STATE_FILE="$WORK_DIR/$SHIELD_STATE_REL/state.json"
 
 if [[ -f "$STATE_FILE" ]]; then
   # Existing state found
@@ -105,19 +103,19 @@ if [[ -z "$STATE_FILE" ]] || [[ ! -f "$STATE_FILE" ]]; then
     # Try common branch patterns
     TICKET_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
     for pattern in "$NAME" "stream/$NAME" "$TICKET_LOWER"; do
-      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$pattern" 2>/dev/null; then
+      if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$pattern" 2>/dev/null; then
         BRANCH="$pattern"
         break
       fi
-      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/remotes/origin/$pattern" 2>/dev/null; then
+      if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/remotes/origin/$pattern" 2>/dev/null; then
         BRANCH="$pattern"
         break
       fi
     done
 
-    # If not found, search for branches containing the ticket ID (e.g. ashwin/useng-582-feature-name)
+    # If not found, search for branches containing the ticket ID (e.g. someone/eng-582-feature-name)
     if [[ -z "$BRANCH" ]]; then
-      MATCH=$(git -C "$RHYTHMS_DIR" branch -a 2>/dev/null | grep -i "$TICKET_LOWER" | head -1 | sed 's/^[ *+]*//' | sed 's|remotes/origin/||')
+      MATCH=$(git -C "$PROJECT_DIR" branch -a 2>/dev/null | grep -i "$TICKET_LOWER" | head -1 | sed 's/^[ *+]*//' | sed 's|remotes/origin/||')
       if [[ -n "$MATCH" ]]; then
         BRANCH="$MATCH"
       fi
@@ -148,83 +146,69 @@ if [[ -z "$STATE_FILE" ]] || [[ ! -f "$STATE_FILE" ]]; then
     if [[ ! -d "$WORK_DIR" ]]; then
       mkdir -p "$WORKTREE_DIR"
 
-      # If the branch is checked out in the main repo, switch main repo to main first
-      MAIN_BRANCH=$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+      # If the branch is checked out in the main repo, switch main repo to the base first
+      MAIN_BRANCH=$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
       if [[ "$MAIN_BRANCH" == "$BRANCH" ]]; then
-        echo "Branch '$BRANCH' is checked out in main repo. Switching main repo to main..."
-        git -C "$RHYTHMS_DIR" checkout main
+        echo "Branch '$BRANCH' is checked out in main repo. Switching main repo to $BASE_BRANCH..."
+        git -C "$PROJECT_DIR" checkout "$BASE_BRANCH"
       fi
 
       # If the branch is locked to another worktree, remove it first
-      WT_PATH=$(git -C "$RHYTHMS_DIR" worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH" | grep "^worktree " | sed 's/^worktree //' || true)
-      if [[ -n "$WT_PATH" && "$WT_PATH" != "$RHYTHMS_DIR" && "$WT_PATH" != "$WORK_DIR" ]]; then
+      WT_PATH=$(git -C "$PROJECT_DIR" worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH" | grep "^worktree " | sed 's/^worktree //' || true)
+      if [[ -n "$WT_PATH" && "$WT_PATH" != "$PROJECT_DIR" && "$WT_PATH" != "$WORK_DIR" ]]; then
         echo "Branch '$BRANCH' is used by worktree at $WT_PATH. Removing..."
-        git -C "$RHYTHMS_DIR" worktree remove "$WT_PATH" --force 2>/dev/null || rm -rf "$WT_PATH"
-        git -C "$RHYTHMS_DIR" worktree prune
+        git -C "$PROJECT_DIR" worktree remove "$WT_PATH" --force 2>/dev/null || rm -rf "$WT_PATH"
+        git -C "$PROJECT_DIR" worktree prune
       fi
 
       echo "Creating worktree '$NAME' on branch '$BRANCH'..."
-      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
-        git -C "$RHYTHMS_DIR" worktree add "$WORK_DIR" "$BRANCH"
+      if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+        git -C "$PROJECT_DIR" worktree add "$WORK_DIR" "$BRANCH"
       else
-        git -C "$RHYTHMS_DIR" worktree add "$WORK_DIR" -b "$BRANCH" "origin/$BRANCH"
+        git -C "$PROJECT_DIR" worktree add "$WORK_DIR" -b "$BRANCH" "origin/$BRANCH"
       fi
     fi
 
+    shield_copy_files "$WORK_DIR"
+
     # Symlink docs/plans/ to main repo so plans survive worktree cleanup
-    mkdir -p "$RHYTHMS_DIR/docs/plans"
     if [[ ! -e "$WORK_DIR/docs/plans" ]]; then
-      mkdir -p "$WORK_DIR/docs"
-      ln -sf "$RHYTHMS_DIR/docs/plans" "$WORK_DIR/docs/plans"
+      mkdir -p "$PROJECT_DIR/docs/plans" "$WORK_DIR/docs"
+      ln -sf "$PROJECT_DIR/docs/plans" "$WORK_DIR/docs/plans"
       echo "Symlinked docs/plans/ to main repo"
     fi
   else
-    WORK_DIR="$RHYTHMS_DIR"
+    WORK_DIR="$PROJECT_DIR"
   fi
 
   # Checkout the branch (local mode only — worktree is already on the right branch)
   if [[ "$MODE" == "local" ]]; then
     CURRENT_BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
-      if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
+      if ! git -C "$PROJECT_DIR" diff --quiet 2>/dev/null || ! git -C "$PROJECT_DIR" diff --cached --quiet 2>/dev/null; then
         echo "Warning: main repo has uncommitted changes."
         read -rp "Stash them and continue? [Y/n] " confirm
         if [[ "$confirm" == [nN] ]]; then
           echo "Aborted."
           exit 1
         fi
-        git -C "$RHYTHMS_DIR" stash push -m "rdev: auto-stash before rresume $NAME"
+        git -C "$PROJECT_DIR" stash push -m "shield: auto-stash before resume $NAME"
       fi
 
       # Checkout — create local tracking branch if needed
-      if git -C "$RHYTHMS_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
-        git -C "$RHYTHMS_DIR" checkout "$BRANCH"
+      if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+        git -C "$PROJECT_DIR" checkout "$BRANCH"
       else
-        git -C "$RHYTHMS_DIR" checkout -b "$BRANCH" "origin/$BRANCH"
+        git -C "$PROJECT_DIR" checkout -b "$BRANCH" "origin/$BRANCH"
       fi
     fi
   fi
 
   # Initialize state
-  mkdir -p "$WORK_DIR/.claude/rdev"
-  cat > "$WORK_DIR/.claude/rdev/state.json" <<EOF
-{
-  "stage": "$FROM_STAGE",
-  "name": "$NAME",
-  "ticket": "$TICKET",
-  "mode": "$MODE",
-  "design": false,
-  "god_mode": $GOD,
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "resumed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "review_loops_done": 0,
-  "max_review_loops": $MAX_REVIEW_LOOPS,
-  "promoted": false
-}
-EOF
+  shield_init_state_at "$WORK_DIR" "$NAME" "$TICKET" "$MODE" false "$GOD" "$FROM_STAGE"
 
   # Create ticket file if missing
-  TICKET_FILE="$WORK_DIR/.claude/rdev/$TICKET.md"
+  TICKET_FILE="$WORK_DIR/$SHIELD_STATE_REL/$NAME.md"
   if [[ ! -f "$TICKET_FILE" ]]; then
     echo "# $TICKET" > "$TICKET_FILE"
     echo "" >> "$TICKET_FILE"
@@ -237,7 +221,9 @@ fi
 
 # --- Update state to the requested stage ---
 
-STATE_FILE="$WORK_DIR/.claude/rdev/state.json"
+STATE_FILE="$WORK_DIR/$SHIELD_STATE_REL/state.json"
+shield_register_stream "$NAME" "$WORK_DIR"
+shield_git_exclude
 if [[ -f "$STATE_FILE" ]]; then
   # Update stage
   tmp=$(jq --arg s "$FROM_STAGE" '.stage = $s' "$STATE_FILE")
@@ -249,19 +235,21 @@ if [[ -f "$STATE_FILE" ]]; then
   echo "State reset to stage '$FROM_STAGE'"
 fi
 
-# --- Copy latest agents ---
+# --- Refresh agents, skills, playbook and project facts ---
 
-mkdir -p "$WORK_DIR/.claude/agents"
-cp "$RDEV_ROOT"/agents/*.md "$WORK_DIR/.claude/agents/"
-echo "Updated agents from rdev"
+shield_install_agents "$WORK_DIR"
+"$SCRIPT_DIR/shield-sync-skills" "$PROJECT_DIR" || echo "sync-skills failed (non-fatal)"
+shield_install_playbook "$WORK_DIR"
+[[ -f "$STATE_FILE" ]] && shield_state_project_meta "$STATE_FILE"
+echo "Refreshed agents + workflow playbook"
 
 # --- Find-or-create the Herdr tab in the project workspace ---
-WS_ID="$(rdev-mux space-ensure --name "$RDEV_WORKSPACE" --cwd "$RHYTHMS_DIR")"
+WS_ID="$(mux space-ensure --name "$WORKSPACE" --cwd "$PROJECT_DIR")"
 TAB_ID=""
-[[ -n "$WS_ID" ]] && TAB_ID="$(rdev-mux tab-find --name "$NAME" --workspace "$WS_ID")"
+[[ -n "$WS_ID" ]] && TAB_ID="$(mux tab-find --name "$NAME" --workspace "$WS_ID")"
 TAB_CREATED=false
 if [[ -z "$TAB_ID" ]]; then
-  TAB_ID="$(rdev-mux tab-new --name "$NAME" --cwd "$WORK_DIR" --workspace "$WS_ID")"
+  TAB_ID="$(mux tab-new --name "$NAME" --cwd "$WORK_DIR" --workspace "$WS_ID")"
   TAB_CREATED=true
 fi
 if [[ -z "$TAB_ID" ]]; then
@@ -276,39 +264,41 @@ if [[ "$GOD" == "true" ]]; then
 fi
 
 # Launch coordinator in the LEFT pane — fresh session (resuming from a new point).
-P0="$(rdev-mux pane-first --tab "$TAB_ID")"
+P0="$(mux pane-first --tab "$TAB_ID")"
 if [[ -n "$P0" ]]; then
   if [[ "$TAB_CREATED" == "true" ]]; then
-    rdev-mux pane-split --pane "$P0" --dir right --ratio 0.7 --cwd "$WORK_DIR" >/dev/null 2>&1 || true
+    mux pane-split --pane "$P0" --dir right --ratio 0.7 --cwd "$WORK_DIR" >/dev/null 2>&1 || true
   fi
-# FOOTGUN GUARD: never type a launch command into a pane that holds a LIVE
+  # FOOTGUN GUARD: never type a launch command into a pane that holds a LIVE
   # agent — it lands as chat input in the running session and wrecks it.
-  LIVE_PANE="$(rdev-mux agent-cwd --cwd "$WORK_DIR" 2>/dev/null || true)"
+  LIVE_PANE="$(mux agent-cwd --cwd "$WORK_DIR" 2>/dev/null || true)"
   if [[ -n "$LIVE_PANE" ]]; then
     echo "Stream '$NAME' already has a LIVE agent (pane $LIVE_PANE)."
-    echo "Not launching a second one. To talk to it, type in its pane (or have coulson relay)."
+    echo "Not launching a second one. To talk to it, type in its pane (or: shield send $NAME <msg>)."
     echo "To force a fresh session: close that tab first (herdr tab close), then re-run."
     exit 0
   fi
-  STATE_F="$WORK_DIR/.claude/rdev/state.json"
+  STATE_F="$STATE_FILE"
   RUNNER="claude"
   [[ -f "$STATE_F" ]] && RUNNER="$(jq -r '.runner // "claude"' "$STATE_F" 2>/dev/null)"
   [[ -n "$RUNNER_FLAG" ]] && RUNNER="$RUNNER_FLAG"
   if [[ -f "$STATE_F" ]]; then
     jq --arg p "$P0" --arg r "$RUNNER" '.herdr = (.herdr // {}) + {pane: $p} | .runner = $r' "$STATE_F" > "$STATE_F.tmp" && mv "$STATE_F.tmp" "$STATE_F"
   fi
+  STOPPED_NOTE="terminal-notifier -title 'shield' -message 'Agent stopped: $NAME' -sound default -group shield 2>/dev/null || true"
   if [[ "$RUNNER" == "claude" ]]; then
-    rdev-mux pane-run --pane "$P0" --text "cd $WORK_DIR && claude --agent coordinator $PERM_FLAG --remote-control rdev:$NAME -n rdev:$NAME; terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true"
+    mux pane-run --pane "$P0" --text "cd $(printf %q "$WORK_DIR") && claude --agent coordinator $PERM_FLAG --remote-control shield:$NAME -n shield:$NAME; $STOPPED_NOTE"
   else
-    RESUME_PROMPT="Read .claude/rdev/playbook/workflow.md, then the plan in docs/plans/ for ticket $NAME and its Progress section; resume at the recorded stage and round — do not restart. Keep Progress updated."
+    RESUME_PROMPT="Read $SHIELD_STATE_REL/playbook/workflow.md, then the plan in docs/plans/ for ticket $NAME and its Progress section; resume at the recorded stage and round — do not restart. Keep Progress updated."
     [[ "$GOD" == "true" ]] && RESUME_PROMPT="$RESUME_PROMPT Autonomy: mode autonomous — no optional pauses."
-    rdev-mux pane-run --pane "$P0" --text "cd $WORK_DIR && $RUNNER $(printf %q "$RESUME_PROMPT"); terminal-notifier -title 'rdev' -message 'Agent stopped: $NAME' -sound default -group rdev 2>/dev/null || true"
+    mux pane-run --pane "$P0" --text "cd $(printf %q "$WORK_DIR") && $RUNNER $(printf %q "$RESUME_PROMPT"); $STOPPED_NOTE"
   fi
 fi
-rdev-mux tab-focus --tab "$TAB_ID" >/dev/null 2>&1 || true
+mux tab-focus --tab "$TAB_ID" >/dev/null 2>&1 || true
 
 echo ""
 echo "Stream '$NAME' resumed at stage '$FROM_STAGE'"
+echo "  Project: $PROJECT_DIR"
 echo "  Directory: $WORK_DIR"
 echo "  Branch: $(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 echo "  Herdr tab: $TAB_ID"

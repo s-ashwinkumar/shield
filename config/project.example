@@ -1,0 +1,47 @@
+# shield per-project configuration: <repo>/.shield/config
+# Optional — every key has a default. Sourced as bash. Commit it to share it
+# with your team, or keep it local.
+
+# Herdr workspace holding this repo's stream tabs (default: the repo dir's name)
+#WORKSPACE=myapp
+
+# Branch new streams start from (default: origin's HEAD, else main)
+#BASE_BRANCH=main
+
+# Where stream worktrees go (default: .claude/worktrees; relative = to the repo)
+#WORKTREE_DIR=.claude/worktrees
+
+# Untracked files copied from the main checkout into each new worktree
+#COPY_FILES=(.env .env.local .local.env)
+
+# Dependencies shared into worktrees: "dep_dir:lockfile:subdir:install cmd".
+# Matching lockfile -> the main checkout's dep dir is symlinked in; a diverged
+# lockfile -> the install command runs in the worktree instead.
+#DEPS=(
+#  "node_modules:package-lock.json:.:npm ci"
+#  "web/node_modules:web/package-lock.json:web:npm ci"
+#)
+
+# Run DEPS installs (and give the setup hook a path) inside a dev container.
+# The repo must be mounted in the container at CONTAINER_WORKDIR, with
+# worktrees inside the repo (the default WORKTREE_DIR) so they are visible.
+#CONTAINER=myapp-dev-1
+#CONTAINER_WORKDIR=/workspaces/myapp
+
+# Executable run in each new worktree after deps (default: .shield/setup).
+# Env: SHIELD_STREAM SHIELD_WORKTREE SHIELD_PROJECT_DIR SHIELD_CONTAINER
+#      SHIELD_EXEC_PATH (the worktree's path inside CONTAINER, if set).
+# Put repo-specific prep here: per-worktree databases, tool trust, codegen, ...
+#SETUP_HOOK=.shield/setup
+
+# Local services `shield status --all` health-checks: "name:port"
+#SERVICES=(web:3000 api:8080)
+
+# Per-PR preview deployments, if you have them. {pr} = the PR number.
+# Agents QA against this URL; without it they QA locally.
+#PREVIEW_URL="https://myapp-pr-{pr}.example.com"
+
+# Where tickets come from: linear | github | none | auto (default: auto —
+# the agent uses the Linear MCP if connected, `gh issue` for numeric IDs,
+# else asks you to describe the task).
+#TRACKER=auto

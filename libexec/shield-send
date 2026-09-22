@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# shield send -- relay a message into a stream's LIVE agent session. ONE command.
+#
+#   shield send <stream> <message...>
+#
+# Resolves the pane itself (live registry first, recorded address fallback),
+# types the message + Enter into the running session, confirms. Exits 3 if
+# there is no live agent (start/resume the stream first) — it never launches
+# anything and never types into a dead pane.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+set +e  # lib enables -e; we handle our own errors
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 2 ]]; then
+  echo "Usage: shield send <stream> <message...>   (relay into the stream's live agent)"
+  exit 0
+fi
+
+STREAM="$1"; shift
+MSG="$*"
+shield_resolve_stream "$STREAM"
+WT="$WORK_DIR"
+[[ -d "$WT" ]] || { echo "shield send: no such stream worktree: $STREAM" >&2; exit 2; }
+
+# Live registry is the truth; recorded spawn address is the fallback.
+PANE="$(mux agent-cwd --cwd "$WT" 2>/dev/null)"
+if [[ -z "$PANE" ]]; then
+  PANE="$(jq -r '.herdr.pane // empty' "$WT/.claude/shield/state.json" 2>/dev/null)"
+fi
+if [[ -z "$PANE" ]]; then
+  echo "shield send: no live agent for '$STREAM' — resume it first (shield resume $STREAM), then shield send again." >&2
+  exit 3
+fi
+
+if ! mux pane-run --pane "$PANE" --text "$MSG" >/dev/null 2>&1; then
+  echo "shield send: send failed (pane $PANE)" >&2
+  exit 4
+fi
+echo "shield send: ✅ sent to $STREAM (pane $PANE): \"$MSG\""

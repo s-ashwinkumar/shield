@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# shield coulson -- launch/ensure the first mate: fleet watcher + coulson agent.
+#
+# Idempotent: run it any time. Ensures (1) the watcher daemon (shield watch) is
+# running under launchd, (2) a 'coulson' Herdr tab exists in the shield
+# workspace ($SHIELD_WORKSPACE) with a Claude session running the coulson
+# agent (named shield:coulson). One Coulson watches every project.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+
+ATT="${SHIELD_WATCH_HOME:-${SHIELD_HOME:-$HOME/.shield}/attention}"
+mkdir -p "$ATT"
+
+# --- 1) Ensure the watcher under launchd (KeepAlive: survives shells, restarts on crash) ---
+PLIST="$HOME/Library/LaunchAgents/com.shield.watch.plist"
+LABEL="com.shield.watch"
+# Retire the pre-rename service (it ran bin/rfleet, which no longer exists).
+OLD_PLIST="$HOME/Library/LaunchAgents/com.shield.rfleet.plist"
+if [[ -f "$OLD_PLIST" ]]; then
+  launchctl bootout "gui/$(id -u)/com.shield.rfleet" 2>/dev/null || true
+  rm -f "$OLD_PLIST"
+fi
+if [[ ! -f "$PLIST" ]] || ! grep -q "$SCRIPT_DIR/shield-watch" "$PLIST" 2>/dev/null || ! grep -q "<string>daemon</string>" "$PLIST" 2>/dev/null; then
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$PLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key><array><string>$SCRIPT_DIR/shield-watch</string><string>daemon</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$ATT/watch.log</string>
+  <key>StandardErrorPath</key><string>$ATT/watch.log</string>
+</dict></plist>
+PL
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  echo "watcher: installed launchd service ($PLIST)"
+fi
+if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+  :
+else
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null || true
+fi
+sleep 2
+HB_AGE=999999
+[[ -f "$ATT/heartbeat" ]] && HB_AGE=$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))
+if (( HB_AGE < 60 )); then
+  echo "watcher: running under launchd (heartbeat ${HB_AGE}s ago)"
+else
+  launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  sleep 2
+  [[ -f "$ATT/heartbeat" ]] && HB_AGE=$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))
+  echo "watcher: launchd kickstarted (heartbeat ${HB_AGE}s ago; log: $ATT/watch.log)"
+fi
+
+# --- 2) Ensure the coulson agent ---
+CTAB="$(mux tab-find --name coulson 2>/dev/null || true)"
+EXISTING=""
+[[ -n "$CTAB" ]] && EXISTING="$(mux agent-tab --tab "$CTAB" 2>/dev/null || true)"
+if [[ -n "$EXISTING" ]]; then
+  echo "coulson: already running (pane $EXISTING)"
+  echo ""
+  echo "Talk to it in the 'coulson' tab. Pending attention items:"
+  ls "$ATT/pending" 2>/dev/null | grep -c '\.json$' || echo 0
+  exit 0
+fi
+
+WS_ID="$(mux space-ensure --name "$SHIELD_WORKSPACE" --cwd "$SHIELD_ROOT")"
+if [[ -z "$WS_ID" ]]; then
+  echo "Error: no Herdr workspace '$SHIELD_WORKSPACE'. Is the server running? (herdr status server)"
+  exit 1
+fi
+
+TAB_ID="$(mux tab-find --name coulson --workspace "$WS_ID")"
+if [[ -z "$TAB_ID" ]]; then
+  TAB_ID="$(mux tab-new --name coulson --cwd "$SHIELD_ROOT" --workspace "$WS_ID")"
+fi
+if [[ -z "$TAB_ID" ]]; then
+  echo "Error: failed to create the coulson tab."
+  exit 1
+fi
+
+P0="$(mux pane-first --tab "$TAB_ID")"
+if [[ -z "$P0" ]]; then
+  echo "Error: no pane in the coulson tab."
+  exit 1
+fi
+
+CAPTAIN_CMD="claude --agent coulson --permission-mode auto --remote-control shield:coulson -n shield:coulson 'On duty. Run shield status, check the attention queue at ~/.shield/attention/pending/, then give me a one-screen fleet status.'"
+mux pane-run --pane "$P0" --text "$CAPTAIN_CMD" >/dev/null
+
+echo "coulson: launched in tab 'coulson' of workspace '$SHIELD_WORKSPACE' (agent shield:coulson)"
+echo "Say things like: 'start ENG-1101 in <project>' · 'what needs me?' · answers to items inline."

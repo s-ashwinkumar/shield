@@ -37,49 +37,36 @@ A change can touch several of these; run every row that applies. Always
 capture what you observe — it becomes the evidence in
 [stage 5](5-ship.md): text outputs (responses, logs, test runs) go in the
 PR body's "What was tested" section; screenshots/video get uploaded to the
-Linear ticket as a QA comment (never committed to the repo).
+ticket as a QA comment if the tracker supports uploads, else posted as a PR
+comment (never committed to the repo).
 
 | What changed | How to QA it |
 |---|---|
-| **webui** (pages, components) | Open a real browser on the Railway PR preview and walk the test plan like a user: navigate, click, type, verify what renders. Capture screenshots/video. |
-| **HTTP API** (railsapi endpoints) | Call the changed endpoints for real, with realistic payloads — happy path plus the edge cases from the plan. Inspect responses, DB state, and logs. |
-| **MCP tools** (mcpservers) | Point the `Rhythms-railway` MCP server at the **preview's** MCP endpoint, reconnect + auth (see **MCP-preview auth** below), then call the changed tools with realistic arguments. Verify the returned payloads AND the side effects in the app (did the document/goal actually change?). |
-| **Jobs / pipelines** (mlai, background work) | Trigger the job with a realistic input and watch it run: outputs, logs, resulting state. |
+| **UI** (pages, components) | Open a real browser on the QA environment (below) and walk the test plan like a user: navigate, click, type, verify what renders. Capture screenshots/video. |
+| **HTTP API** (endpoints) | Call the changed endpoints for real, with realistic payloads — happy path plus the edge cases from the plan. Inspect responses, DB state, and logs. |
+| **MCP tools** | Point the project's MCP server config at the QA environment's MCP endpoint, reconnect + auth (see **MCP against a preview** below), then call the changed tools with realistic arguments. Verify the returned payloads AND the side effects in the app (did the underlying record actually change?). |
+| **Jobs / pipelines** (background work) | Trigger the job with a realistic input and watch it run: outputs, logs, resulting state. |
 | **CLI / scripts** | Run the command the way a user would, on a realistic case. |
 
-**Environment:** QA runs against the branch's **Railway PR preview, never
-a local server, unless the plan explicitly calls for local QA**. The
-preview deploys the **whole stack** (webui, railsapi, mlai, mcpservers
-from your branch), so every method row above runs against it — UI in the
-browser at `https://webui-rhythms-pr-<PR>.up.railway.app/`, APIs/MCP/jobs
-against the preview's services. Open a draft PR (if not already open) to
-trigger the preview; wait a few minutes for it to deploy.
+**Environment:** if the project has preview deployments
+(`preview_url_pattern` in `state.json`, e.g.
+`https://myapp-pr-{pr}.example.com`), QA runs against **the PR's preview,
+not a local server, unless the plan explicitly calls for local QA** — every
+method row above runs against it. Open a draft PR (if not already open) to
+trigger the preview; wait a few minutes for it to deploy. No preview → QA
+the app running locally from the worktree, started per the repo's docs
+(`AGENTS.md` / README; in the dev container if the repo uses one).
 
 **Login:** use a browser with a **persistent profile** kept signed into a
-test/QA Google account, so OAuth auto-completes on every preview domain
-without a human (each PR preview is a new subdomain, but the profile's
-Google session carries the flow). A harness whose profile session has
+test/QA account (e.g. Google), so OAuth auto-completes on every preview
+domain without a human (each PR preview may be a new subdomain, but the
+profile's session carries the flow). A harness whose profile session has
 expired escalates once for a re-login rather than failing rounds.
 
-**MCP-preview auth (for MCP-tool changes — do this yourself; escalate only
-for the interactive login):** the browser/persistent-profile trick above is
-for webui/HTTP QA. MCP QA against the preview needs its own auth flow — the
-agent drives it:
-
-1. Preview MCP endpoint = `https://mcpservers-rhythms-pr-<PR>.up.railway.app/rhythms/mcp`.
-2. Repoint the **`Rhythms-railway`** MCP server's `url` to that endpoint (in the
-   MCP config the session reads).
-3. **Reconnect** so the new URL loads — restart the session, or `/mcp`.
-4. **Auth (human-in-the-loop — WorkOS OAuth can't be scripted):** open the auth
-   URL, complete the WorkOS login, then **select this preview's tenant from the
-   dropdown.** Escalate to the human for this click; resume when done.
-   - ⚠️ **Fresh-tenant gotcha:** a brand-new preview tenant may **not appear in
-     the tenant dropdown** until it's been provisioned by a first webui login.
-     If the tenant is missing, log into `https://webui-rhythms-pr-<PR>.up.railway.app/`
-     **once** first (that provisions it), then redo the MCP auth — it'll now be
-     in the list.
-5. Call the changed MCP tools with realistic args; verify payloads AND side
-   effects in the app. Point the `Rhythms-railway` MCP back at mainline when done.
+**MCP against a preview:** point the project's MCP server config at the
+preview's MCP endpoint, reconnect and re-auth (escalate to the human only
+for an interactive login step), run the calls, then point the config back
+when done.
 
 **Shared browsers:** if the harness attaches multiple parallel work
 streams to one browser instance, keep strict tab discipline — each

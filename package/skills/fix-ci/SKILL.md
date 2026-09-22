@@ -52,20 +52,13 @@ For each failure caused by this PR:
 - Read the relevant source file
 - Make the fix — keep it minimal and focused
 
-**IMPORTANT: Verify fixes locally BEFORE committing.** Use the devcontainer to run the same checks CI runs:
+**IMPORTANT: Verify fixes locally BEFORE committing.** Run the same checks CI runs — the repo's lint/typecheck/test commands for each service/package the fix touches (see its `AGENTS.md` / `CLAUDE.md` and the CI config). If `.shield/config` sets `CONTAINER`, run them inside that container at the worktree's path (`CONTAINER_WORKDIR` + the worktree's path within the repo). Example, for a repo with a `web/` package in a dev container:
 
 ```bash
-# WebUI lint/typecheck/format
-docker exec fullstack-fullstack-1 bash -lc "cd /workspaces/rhythms/webui && npm run lint:fix && npm run format:write && npx tsc --noEmit"
-
-# RailsAPI lint/tests
-docker exec fullstack-fullstack-1 bash -lc "cd /workspaces/rhythms/railsapi && bundle exec rubocop -A && bundle exec rspec <specific_test_file>"
-
-# MLAI lint/tests
-docker exec fullstack-fullstack-1 bash -lc "cd /workspaces/rhythms/mlai && ruff check --fix . && python -m pytest <specific_test_file>"
+docker exec <CONTAINER> bash -lc "cd <worktree path in container>/web && npm run lint && npx tsc --noEmit"
 ```
 
-If the devcontainer isn't running (`docker exec` fails), fall back to host-level checks where possible.
+If the container isn't running (`docker exec` fails), fall back to host-level checks where possible.
 
 Only commit after local verification passes. If your fix introduces new errors, revert it.
 

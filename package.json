@@ -1,4 +1,6 @@
 {
+  "name": "shield",
+  "private": true,
   "dependencies": {
     "@slidev/theme-seriph": "^0.25.0"
   }

@@ -15,18 +15,22 @@ and triage; nothing here is about *how* to solve anything.
    anything else moves forward. Only when there is no plan file (or no
    Progress section) is this a fresh start.
 1. **Read the ticket fully** — title, description, **comments**, labels,
-   linked docs from Linear. Don't start from the title alone; comments often
-   change the scope. ⚠️ Fetching the issue usually does NOT include its
-   comments (Linear's `get_issue` returns only the description) — fetch the
-   comment thread explicitly (`list_comments` or your integration's
-   equivalent) and read all of it before forming a view of the work.
+   linked docs from the tracker (Linear, GitHub issues, ...; no tracker →
+   ask the user). Don't start from the title alone; comments often change
+   the scope. ⚠️ Fetching the issue often does NOT include its comments (if
+   the tracker is Linear, `get_issue` returns only the description) — fetch
+   the comment thread explicitly (Linear `list_comments`, `gh issue view <n>
+   --comments`, or your integration's equivalent) and read all of it before
+   forming a view of the work.
 2. **If it's a BUG: get the reproduction steps straight first.** Before any
    planning, establish concrete repro steps — from the ticket/comments if
    they're there, otherwise by reproducing it yourself end-to-end, as close
    to how the user hit it as possible. Repro env: the one the user hit it
-   in (per the ticket), or the branch's Railway preview — open the draft PR
-   early; it deploys main-equivalent code until you push fixes, and the same
-   steps on the same env later verify the fix. A bug you can't reproduce is a bug you can't prove fixed —
+   in (per the ticket), or the branch's preview deployment if the project
+   has one (`preview_url_pattern`) — open the draft PR early; it deploys
+   base-branch-equivalent code until you push fixes — else the app run
+   locally from the worktree. The same steps on the same env later verify
+   the fix. A bug you can't reproduce is a bug you can't prove fixed —
    the repro steps become the core of the plan's QA test plan. Only if
    reproduction is genuinely impossible (transient conditions, production
    data or access you don't have) record *why* and what evidence stands in
@@ -35,10 +39,11 @@ and triage; nothing here is about *how* to solve anything.
 3. **Mark the ticket started** — move it to In Progress (or your tracker's
    equivalent) if it isn't already; don't rely on push-triggered automation,
    which fires much later than the work actually starts.
-4. **Get on the ticket's branch.** Use the branch name Linear generated for
-   the ticket (the "copy git branch name" value). Never work on `main`.
+4. **Get on the ticket's branch.** Use the branch name the tracker generated
+   for the ticket if it has one (Linear: `gitBranchName`, the "copy git
+   branch name" value). Never work on the base branch.
    - If a placeholder branch was created for you (e.g. `stream/<ticket-id>`),
-     rename it to the Linear branch name: `git branch -m <old> <new>`.
+     rename it to the tracker's branch name: `git branch -m <old> <new>`.
    - If you (or the tool) already picked a deliberate custom name, keep it.
 5. **Persist the context in the repo** so any tool or person can resume:
    - Ticket summary → keep it with your working notes or at the top of the
@@ -54,7 +59,7 @@ State these four things explicitly; [stage 1](1-plan.md) uses them:
 
 1. **Ticket: exists / missing.**
    Missing → stop and ask the requester for a ticket to be created (or
-   offer to create it in Linear). Branch names, the plan file, and the PR
+   offer to create it in the tracker). Branch names, the plan file, and the PR
    all key off the ticket ID — don't proceed without one.
 
 2. **Spec quality: well-spec'd / needs clarification.**
@@ -80,5 +85,4 @@ State these four things explicitly; [stage 1](1-plan.md) uses them:
 ## Exit
 
 You are on the ticket's branch, you can say in plain words what the ticket
-needs and which services (webui / railsapi / mlai / mcpservers) it likely
-touches, and the four triage calls are stated. → [Stage 1: Plan](1-plan.md)
+needs and which services/packages it likely touches, and the four triage calls are stated. → [Stage 1: Plan](1-plan.md)

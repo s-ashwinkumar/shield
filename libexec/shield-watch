@@ -1,82 +1,93 @@
 #!/usr/bin/env bash
-# rfleet -- fleet watcher: turns stream state changes into attention items.
+# shield watch -- fleet watcher: turns stream state changes into attention items.
 #
-# Deterministic, zero-token. Scans every stream's .claude/rdev/state.json,
+# Deterministic, zero-token. Scans every registered stream's (all projects)
+# .claude/shield/state.json,
 # diffs against a cache, and emits attention-item JSON files that the captain
 # agent consumes. Also: batched wake-up injection into the coulson pane,
 # dead-man fallback to terminal-notifier, heartbeat, auto-cancel of stale
 # items.
 #
 # Modes / env:
-#   RFLEET_INTERVAL=15       scan every N seconds
-#   RFLEET_DEADMAN_MIN=10    unacked item age before raw notification
-#   RFLEET_SHADOW=1          write items only (no wake-ups, no dead-man)
-#   RFLEET_ONCE=1            single scan then exit (tests)
-#   RFLEET_NO_PANES=1        skip pane/agent checks (tests, no herdr)
-#   RFLEET_SCAN_DIR=PATH     override stream discovery with a fixture dir
-#   RFLEET_HOME=PATH         override ~/.rdev/attention
+#   SHIELD_WATCH_INTERVAL=15      scan every N seconds
+#   SHIELD_WATCH_DEADMAN_MIN=10    unacked item age before raw notification
+#   SHIELD_WATCH_SHADOW=1          write items only (no wake-ups, no dead-man)
+#   SHIELD_WATCH_ONCE=1            single scan then exit (tests)
+#   SHIELD_WATCH_NO_PANES=1        skip pane/agent checks (tests, no herdr)
+#   SHIELD_WATCH_SCAN_DIR=PATH     override stream discovery with a fixture dir
+#   SHIELD_WATCH_HOME=PATH   override ~/.shield/attention
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
-INTERVAL="${RFLEET_INTERVAL:-15}"
-DEADMAN_MIN="${RFLEET_DEADMAN_MIN:-10}"
-SHADOW="${RFLEET_SHADOW:-0}"
-ONCE="${RFLEET_ONCE:-0}"
-NO_PANES="${RFLEET_NO_PANES:-0}"
-ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
-CAPTAIN_AGENT="${RFLEET_CAPTAIN:-rdev:coulson}"
+INTERVAL="${SHIELD_WATCH_INTERVAL:-15}"
+DEADMAN_MIN="${SHIELD_WATCH_DEADMAN_MIN:-10}"
+SHADOW="${SHIELD_WATCH_SHADOW:-0}"
+ONCE="${SHIELD_WATCH_ONCE:-0}"
+NO_PANES="${SHIELD_WATCH_NO_PANES:-0}"
+ATT="${SHIELD_WATCH_HOME:-${SHIELD_HOME:-$HOME/.shield}/attention}"
 
 # --- Args: this is a DAEMON. Bare invocation starts the loop; give agents
 # and humans safe entry points that always terminate.
 case "${1:-}" in
   -h|--help)
     cat <<'EOF_USAGE'
-rfleet — fleet watcher daemon (normally managed by launchd via rcaptain/shield coulson).
+shield watch — fleet watcher daemon (normally managed by launchd via shield coulson).
 
-  rfleet status    heartbeat, pid, queue counts (safe, read-only, exits)
-  rfleet           start the daemon loop (refuses if one is already alive)
-  env: RFLEET_INTERVAL RFLEET_DEADMAN_MIN RFLEET_SHADOW RFLEET_ONCE RFLEET_NO_PANES
-       RFLEET_SCAN_DIR RFLEET_HOME RFLEET_ADOPT_SEC
+  shield watch [status]  heartbeat, pid, queue counts (safe, read-only, exits)
+  shield watch daemon    start the daemon loop (refuses if one is already alive)
+  env: SHIELD_WATCH_INTERVAL SHIELD_WATCH_DEADMAN_MIN SHIELD_WATCH_SHADOW SHIELD_WATCH_ONCE SHIELD_WATCH_NO_PANES
+       SHIELD_WATCH_SCAN_DIR SHIELD_WATCH_HOME SHIELD_WATCH_ADOPT_SEC
 EOF_USAGE
     exit 0 ;;
   status)
     hb="none"; [[ -f "$ATT/heartbeat" ]] && hb="$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))s ago"
-    pid="none"; [[ -f "$ATT/rfleet.pid" ]] && pid=$(cat "$ATT/rfleet.pid") && ! kill -0 "$pid" 2>/dev/null && pid="$pid (dead)"
-    echo "rfleet: pid=$pid heartbeat=$hb pending=$(ls "$ATT/pending" 2>/dev/null | grep -c json) acked=$(ls "$ATT/acked" 2>/dev/null | grep -c json)"
+    pid="none"; [[ -f "$ATT/watch.pid" ]] && pid=$(cat "$ATT/watch.pid") && ! kill -0 "$pid" 2>/dev/null && pid="$pid (dead)"
+    echo "shield watch: pid=$pid heartbeat=$hb pending=$(ls "$ATT/pending" 2>/dev/null | grep -c json) acked=$(ls "$ATT/acked" 2>/dev/null | grep -c json)"
     exit 0 ;;
   daemon) : ;;  # explicit daemon start (launchd uses this)
   "")
-    if [[ "${RFLEET_ONCE:-0}" != "1" ]]; then
-      # SAFE DEFAULT: bare rfleet = status, never an accidental daemon.
+    if [[ "${SHIELD_WATCH_ONCE:-0}" != "1" ]]; then
+      # SAFE DEFAULT: bare shield watch = status, never an accidental daemon.
       hb="none"; [[ -f "$ATT/heartbeat" ]] && hb="$(( $(date +%s) - $(stat -f %m "$ATT/heartbeat") ))s ago"
-      pid="none"; [[ -f "$ATT/rfleet.pid" ]] && pid=$(cat "$ATT/rfleet.pid") && ! kill -0 "$pid" 2>/dev/null && pid="$pid (dead)"
-      echo "rfleet: pid=$pid heartbeat=$hb pending=$(ls "$ATT/pending" 2>/dev/null | grep -c json) acked=$(ls "$ATT/acked" 2>/dev/null | grep -c json)"
-      echo "rfleet: (this was 'status' — the watcher loop only starts via 'rfleet daemon', normally launchd)"
+      pid="none"; [[ -f "$ATT/watch.pid" ]] && pid=$(cat "$ATT/watch.pid") && ! kill -0 "$pid" 2>/dev/null && pid="$pid (dead)"
+      echo "shield watch: pid=$pid heartbeat=$hb pending=$(ls "$ATT/pending" 2>/dev/null | grep -c json) acked=$(ls "$ATT/acked" 2>/dev/null | grep -c json)"
+      echo "shield watch: (this was 'status' — the watcher loop only starts via 'shield watch daemon', normally launchd)"
       exit 0
     fi ;;
-  *) echo "rfleet: unknown arg '$1' (try: rfleet status | rfleet --help)" >&2; exit 2 ;;
+  *) echo "shield watch: unknown arg '$1' (try: shield watch status | shield watch --help)" >&2; exit 2 ;;
 esac
 
 # Singleton: never start a second daemon next to a live one.
-if [[ -f "$ATT/rfleet.pid" ]] && kill -0 "$(cat "$ATT/rfleet.pid")" 2>/dev/null \
-   && [[ "$$" != "$(cat "$ATT/rfleet.pid")" ]] && [[ "${RFLEET_ONCE:-0}" != "1" ]]; then
-  echo "rfleet: already running (pid $(cat "$ATT/rfleet.pid")). Use 'rfleet status'." >&2
+if [[ -f "$ATT/watch.pid" ]] && kill -0 "$(cat "$ATT/watch.pid")" 2>/dev/null \
+   && [[ "$$" != "$(cat "$ATT/watch.pid")" ]] && [[ "${SHIELD_WATCH_ONCE:-0}" != "1" ]]; then
+  echo "shield watch: already running (pid $(cat "$ATT/watch.pid")). Use 'shield watch status'." >&2
   exit 1
 fi
 
 mkdir -p "$ATT/pending" "$ATT/acked" "$ATT/done" "$ATT/.cache"
-echo $$ > "$ATT/rfleet.pid"
+echo $$ > "$ATT/watch.pid"
 
-# Stream discovery: fixture dir override, else rdev config worktrees.
-if [[ -n "${RFLEET_SCAN_DIR:-}" ]]; then
-  SCAN_DIR="$RFLEET_SCAN_DIR"
-else
-  source "$SCRIPT_DIR/_rdev_lib.sh"
-  rdev_load_config
-  set +e  # _rdev_lib.sh enables -e at source time; a watcher must outlive failed probes
-  SCAN_DIR="$WORKTREE_DIR"
-fi
+# Stream discovery: a fixture dir of <stream>/ work dirs (tests), else the
+# stream registry (~/.shield/streams), which spans every project.
+source "$SCRIPT_DIR/_lib.sh"
+set +e  # _lib.sh enables -e at source time; a watcher must outlive failed probes
+SCAN_DIR="${SHIELD_WATCH_SCAN_DIR:-}"
+
+# stream_dir <name> — the stream's work dir
+stream_dir() {
+  if [[ -n "$SCAN_DIR" ]]; then echo "$SCAN_DIR/$1"; else shield_stream_dir "$1"; fi
+}
+# stream_names — every stream to scan
+stream_names() {
+  local d
+  if [[ -n "$SCAN_DIR" ]]; then
+    for d in "$SCAN_DIR"/*/; do [[ -d "$d" ]] && basename "$d"; done
+  else
+    shield_stream_names
+  fi
+  return 0
+}
 
 # Patterns meaning the agent is waiting on a human
 STUCK_PATTERNS=(
@@ -86,7 +97,7 @@ STUCK_PATTERNS=(
 )
 STUCK_RE=$(printf "|%s" "${STUCK_PATTERNS[@]}"); STUCK_RE="${STUCK_RE:1}"
 
-log() { echo "rfleet: $*"; }
+log() { echo "shield watch: $*"; }
 
 # emit <stream> <type> <summary> <state_file>
 # Dedupe: skip if a pending item for the same stream+type already exists.
@@ -100,7 +111,7 @@ emit() {
   jq -n --arg id "$id" --arg stream "$stream" --arg type "$type" \
         --arg summary "$summary" --argjson now "$now" \
         --argjson deadman "$DEADMAN_MIN" \
-        --slurpfile st <(jq '{stage, ticket, demo_required, dev1_ready, pr_url} | with_entries(select(.value != null))' "$state_file" 2>/dev/null || echo '{}') \
+        --slurpfile st <(jq '{stage, ticket, project, demo_required, pr_url} | with_entries(select(.value != null))' "$state_file" 2>/dev/null || echo '{}') \
         '{id:$id, stream:$stream, type:$type, summary:$summary,
           created_at:$now, acked_at:null, escalated_raw:false,
           deadman_after_min:$deadman, state_snapshot:($st[0] // {})}' \
@@ -136,10 +147,10 @@ cancel() {
 }
 
 scan_stream() {
-  local wt="$1"
-  local stream state cache
-  stream=$(basename "$wt")
-  state="$wt/.claude/rdev/state.json"
+  local stream="$1"
+  local wt state cache
+  wt="$(stream_dir "$stream")"
+  state="$wt/$SHIELD_STATE_REL/state.json"
   [[ -f "$state" ]] || return 0
   cache="$ATT/.cache/${stream}.json"
 
@@ -149,7 +160,7 @@ scan_stream() {
   # worktrees (done long ago, dead sessions, stale gates).
   if [[ ! -f "$cache" ]]; then
     local state_age=$(( $(date +%s) - $(stat -f %m "$state" 2>/dev/null || echo 0) ))
-    if (( state_age > ${RFLEET_ADOPT_SEC:-3600} )); then
+    if (( state_age > ${SHIELD_WATCH_ADOPT_SEC:-3600} )); then
       cp "$state" "$cache" 2>/dev/null || true
       log "adopted (baseline, state ${state_age}s old): $stream"
       return 0
@@ -163,16 +174,14 @@ scan_stream() {
 
   # 1) Stage transitions
   # NOTE: plan_gate is intentionally NOT emitted on entry into the plan stage.
-  # Streams are born with stage=plan (see rdev_init_state), so an entry-based
+  # Streams are born with stage=plan (see shield_init_state_at), so an entry-based
   # gate fires at launch, before any plan exists. The coordinator raises the
-  # gate itself via `rgate` (state.attention) once the plan is ready — handled
+  # gate itself via `shield gate` (state.attention) once the plan is ready — handled
   # by the coordinator-flagged attention path below.
   if [[ "$cur_stage" == "done" && "$prev_stage" != "done" ]]; then
-    local demo dev1 extra=""
+    local demo extra=""
     demo=$(jq -r '.demo_required // false' "$state")
-    dev1=$(jq -r '.dev1_ready // false' "$state")
-    [[ "$demo" == "true" ]] && extra=" — Supercut demo needed"
-    [[ "$dev1" == "false" ]] && extra="$extra; then ready-for-dev1"
+    [[ "$demo" == "true" ]] && extra=" — demo needed"
     emit "$stream" "done_followups" "Stream done (${ticket:-$stream})${extra}" "$state"
   fi
 
@@ -194,20 +203,20 @@ scan_stream() {
   # 3) Liveness + stuck prompts (needs herdr)
   if [[ "$NO_PANES" != "1" && "${REGISTRY_OK:-1}" == "1" && "$cur_stage" != "done" && -n "$cur_stage" ]]; then
     local agent_pane
-    agent_pane=$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)
+    agent_pane=$(mux agent-cwd --cwd "$wt" 2>/dev/null || true)
     if [[ -z "$agent_pane" ]]; then
       # Not a live herdr agent.
       {
         # Only flag death for streams this watcher has seen ALIVE (marker),
         # or whose state changed recently — never for fossil worktrees. And
         # DEBOUNCE: agents blink out of the registry during turn transitions,
-        # so require RFLEET_DIED_MISSES consecutive missed polls (default 2).
+        # so require SHIELD_WATCH_DIED_MISSES consecutive missed polls (default 2).
         local st_age=$(( $(date +%s) - $(stat -f %m "$state" 2>/dev/null || echo 0) ))
-        if [[ -f "$ATT/.cache/${stream}.alive" ]] || (( st_age < ${RFLEET_ADOPT_SEC:-3600} )); then
+        if [[ -f "$ATT/.cache/${stream}.alive" ]] || (( st_age < ${SHIELD_WATCH_ADOPT_SEC:-3600} )); then
           local misses=0 missf="$ATT/.cache/${stream}.misses"
           [[ -f "$missf" ]] && misses=$(cat "$missf")
           misses=$(( misses + 1 )); echo "$misses" > "$missf"
-          if (( misses >= ${RFLEET_DIED_MISSES:-2} )); then
+          if (( misses >= ${SHIELD_WATCH_DIED_MISSES:-2} )); then
             emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
           fi
         fi
@@ -216,7 +225,7 @@ scan_stream() {
       touch "$ATT/.cache/${stream}.alive"
       rm -f "$ATT/.cache/${stream}.misses"
       local tail
-      tail=$("$SCRIPT_DIR/rdev-mux" pane-read --pane "$agent_pane" --lines 15 2>/dev/null || true)
+      tail=$(mux pane-read --pane "$agent_pane" --lines 15 2>/dev/null || true)
       if [[ -n "$tail" ]] && echo "$tail" | grep -qE "$STUCK_RE"; then
         emit "$stream" "stuck" "Agent waiting on a prompt (stage: $cur_stage)" "$state"
       fi
@@ -231,13 +240,13 @@ auto_cancel() {
   for f in "$ATT/pending/"*.json; do
     [[ -f "$f" ]] || continue
     stream=$(jq -r '.stream' "$f"); type=$(jq -r '.type' "$f")
-    wt="$SCAN_DIR/$stream"; state="$wt/.claude/rdev/state.json"
+    wt="$(stream_dir "$stream")"; state="$wt/$SHIELD_STATE_REL/state.json"
     [[ -f "$state" ]] || continue
     cur_stage=$(jq -r '.stage // ""' "$state")
     case "$type" in
       plan_gate)  [[ "$cur_stage" != "plan" ]] && cancel "$f" "superseded" ;;
       died) # self-heal: agent back alive -> item is stale
-            if [[ "$NO_PANES" != "1" && "${REGISTRY_OK:-1}" == "1" ]] && [[ -n "$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)" ]]; then
+            if [[ "$NO_PANES" != "1" && "${REGISTRY_OK:-1}" == "1" ]] && [[ -n "$(mux agent-cwd --cwd "$wt" 2>/dev/null || true)" ]]; then
               cancel "$f" "agent back alive"
             fi ;;
       stuck) : ;;  # cleared by ack; liveness re-emits if still true
@@ -260,7 +269,7 @@ deadman() {
     age=$(( now - $(jq -r '.created_at' "$f") ))
     if (( age > DEADMAN_MIN * 60 )); then
       stream=$(jq -r '.stream' "$f"); summary=$(jq -r '.summary' "$f")
-      "$SCRIPT_DIR/rnotify" "$stream" "[unrouted] $summary" || true
+      "$SCRIPT_DIR/shield-notify" "$stream" "[unrouted] $summary" || true
       jq '.escalated_raw = true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
       log "dead-man fired: $(basename "$f")"
     fi
@@ -272,15 +281,15 @@ wakeup() {
   (( ${#NEW_ITEMS[@]} > 0 )) || return 0
   local pane msg
   local ctab
-  ctab=$("$SCRIPT_DIR/rdev-mux" tab-find --name coulson 2>/dev/null || true)
+  ctab=$(mux tab-find --name coulson 2>/dev/null || true)
   pane=""
-  [[ -n "$ctab" ]] && pane=$("$SCRIPT_DIR/rdev-mux" agent-tab --tab "$ctab" 2>/dev/null || true)
+  [[ -n "$ctab" ]] && pane=$(mux agent-tab --tab "$ctab" 2>/dev/null || true)
   if [[ -z "$pane" ]]; then
     log "no captain pane — wake-up skipped (${#NEW_ITEMS[@]} item(s) pending; dead-man armed)"
     return 0
   fi
   msg="🔔 attention: ${#NEW_ITEMS[@]} new item(s): ${NEW_ITEMS[*]}. Work the queue at $ATT/pending/."
-  "$SCRIPT_DIR/rdev-mux" pane-run --pane "$pane" --text "$msg" >/dev/null 2>&1 || \
+  mux pane-run --pane "$pane" --text "$msg" >/dev/null 2>&1 || \
     log "wake-up injection failed"
 }
 
@@ -291,23 +300,23 @@ scan() {
   REGISTRY_OK=1
   if [[ "$NO_PANES" != "1" ]]; then
     local nagents
-    nagents=$("$SCRIPT_DIR/rdev-mux" list 2>>"$ATT/probe.err" | jq -r '.result.agents | length' 2>>"$ATT/probe.err")
+    nagents=$(mux list 2>>"$ATT/probe.err" | jq -r '.result.agents | length' 2>>"$ATT/probe.err")
     if [[ -z "$nagents" || "$nagents" == "0" ]]; then
       REGISTRY_OK=0
       log "herdr registry unreachable/empty from watcher (agents=${nagents:-ERR}) — liveness skipped this scan"
     fi
   fi
-  local wt
-  for wt in "$SCAN_DIR"/*/; do
-    [[ -d "$wt" ]] && scan_stream "${wt%/}"
-  done
+  local name
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && scan_stream "$name"
+  done < <(stream_names)
   auto_cancel
   deadman
   wakeup
   touch "$ATT/heartbeat"
 }
 
-log "watching $SCAN_DIR every ${INTERVAL}s (shadow=$SHADOW, deadman=${DEADMAN_MIN}m, queue=$ATT)"
+log "watching ${SCAN_DIR:-$SHIELD_STREAMS} every ${INTERVAL}s (shadow=$SHADOW, deadman=${DEADMAN_MIN}m, queue=$ATT)"
 while true; do
   scan
   [[ "$ONCE" == "1" ]] && exit 0

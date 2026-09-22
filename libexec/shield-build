@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# rbuild -- Approve plan and start autonomous build
+# shield build -- Approve plan and start autonomous build
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-source "$SCRIPT_DIR/_rdev_lib.sh"
-rdev_load_config
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
 
 usage() {
   cat <<EOF
-Usage: rbuild <name>
+Usage: shield build <name>
 
 Approve the plan and tell the coordinator to start building autonomously.
 
@@ -35,28 +35,28 @@ if [[ -z "$NAME" ]]; then
   usage
 fi
 
-WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
+shield_resolve_stream "$NAME"
 
 # Validate state
-STAGE=$(rdev_get_stage "$NAME")
+STAGE=$(shield_get_stage "$NAME")
 if [[ "$STAGE" != "plan" ]]; then
   echo "Error: stream '$NAME' is in stage '$STAGE', expected 'plan'"
-  echo "rbuild can only be run after planning is complete."
+  echo "shield build can only be run after planning is complete."
   exit 1
 fi
 
 # Check the Herdr tab exists
-TAB_ID="$(rdev_stream_tab "$NAME")"
+TAB_ID="$(shield_stream_tab "$NAME")"
 if [[ -z "$TAB_ID" ]]; then
-  echo "Error: Herdr tab '$NAME' not found. Start it first: rstream $NAME"
+  echo "Error: Herdr tab '$NAME' not found. Start it first: shield stream $NAME"
   exit 1
 fi
 
 # Update state
-rdev_update_state "$NAME" "stage" "build"
+shield_update_state "$NAME" "stage" "build"
 
 # Message the LIVE coordinator (mid-planning) to start building; Herdr shows blocked if it prompts.
-rdev_coord_msg "$TAB_ID" "Plan approved. Start building. Read the plan from docs/plans/ and implement it with the builder subagent. When done, update .claude/rdev/state.json stage to ux_review."
+shield_coord_msg "$TAB_ID" "Plan approved. Start building. Read the plan from docs/plans/ and implement it with the builder subagent. When done, update .claude/shield/state.json stage to ux_review."
 
 echo "Build started for '$NAME'."
 echo "You'll get a notification when it's done."

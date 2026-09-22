@@ -16,18 +16,18 @@ Before touching the browser, read these sources **in order** to understand what 
 
 1. **QA Test Plan from the plan doc** — check `docs/plans/<ticket>*.md` for a "QA Test Plan" section. This is the primary source — it tells you exactly what pages to test, what steps to follow, and what "correct" looks like. If this exists, follow it.
 
-2. **Ticket context** — check `.claude/rdev/<ticket>.md` for the ticket description and acceptance criteria.
+2. **Ticket context** — check `.claude/shield/<ticket>.md` for the ticket description and acceptance criteria.
 
-3. **App context** — read the QA context file (check for `qa-context.md` in the skills/qa/ directory, or `.claude/rdev/qa-context.md`). This tells you how to navigate the app, common patterns, and test data.
+3. **App context** — read the QA context file (check for `qa-context.md` in the skills/qa/ directory, or `.claude/shield/qa-context.md`). This tells you how to navigate the app, common patterns, and test data.
 
 4. **Diff-aware inference** (fallback if no QA Test Plan):
    ```bash
-   git diff main --name-only | grep "^webui/"
+   git diff <base_branch> --name-only
    ```
-   Map changed files to routes:
-   - `webui/src/app/<path>/page.tsx` → `/<path>`
-   - `webui/src/app/<path>/layout.tsx` → `/<path>` and child routes
-   - `webui/src/components/<feature>/` → find which pages import this component
+   (`base_branch` from `.claude/shield/state.json`.) Map changed UI files to routes using the app's routing convention (see its `AGENTS.md` / router config); for shared components, find which pages import them. Example — a Next.js app-router app under `web/`:
+   - `web/src/app/<path>/page.tsx` → `/<path>`
+   - `web/src/app/<path>/layout.tsx` → `/<path>` and child routes
+   - `web/src/components/<feature>/` → find which pages import this component
 
 5. **Ask the user** (last resort) — if you can't determine what to test from any source above, ask: "I can see these files changed: <list>. Which pages should I test and what should I verify?"
 
@@ -35,7 +35,7 @@ Before touching the browser, read these sources **in order** to understand what 
 
 Pick the browser mechanism in this order:
 
-1. **chrome-devtools MCP tools** (preferred) — attached to the shared QA Chrome. Run `rqa-browser` (Bash) first: it ensures the dedicated QA Chrome is running on :9222 with the persistent profile `~/.rdev/qa-chrome` (idempotent). If `rqa-browser` or Chrome itself is missing, say so and fall through.
+1. **chrome-devtools MCP tools** (preferred) — attached to the shared QA Chrome. Run `shield browser` (Bash) first: it ensures the dedicated QA Chrome is running on :9222 with the persistent profile `~/.shield/qa-chrome` (idempotent). If `shield browser` or Chrome itself is missing, say so and fall through.
 2. **playwright MCP tools** (fallback) — if chrome-devtools tools aren't available in this session. Expect a possible login wall (playwright may launch without the shared profile); handle it per Phase 1.
 3. **Neither available** — don't fake it: hand the user the QA test plan as a checklist, ask them to walk it in their browser and report results, and note in the QA round record that a human executed it. Suggest registering chrome-devtools MCP (`claude mcp add -s user chrome-devtools -- npx -y chrome-devtools-mcp@latest --browserUrl http://127.0.0.1:9222 --experimentalPageIdRouting`).
 
@@ -47,7 +47,7 @@ When on chrome-devtools (option 1):
 
 ### Phase 1: Auth Check
 
-Navigate (in your tab) to the app URL. **Default: the branch's Railway preview** — `https://webui-rhythms-pr-<PR>.up.railway.app/` (get `<PR>` from `gh pr view --json number -q .number`; the draft PR should already exist per the workflow). Use `http://localhost:3000` only if the user explicitly asked for local QA.
+Navigate (in your tab) to the app URL. **Default:** if `preview_url_pattern` is set in `.claude/shield/state.json`, the PR's preview — substitute `{pr}` with `gh pr view --json number -q .number` (the draft PR should already exist per the workflow); use a local URL only if the user explicitly asked for local QA. Otherwise the app running locally from the worktree, per the repo's docs and the QA context file.
 
 - If the preview isn't up yet (build in progress), wait a few minutes and retry before reporting.
 - If redirected to login: click through Google OAuth — the QA Chrome profile stays signed into Google, so the flow should complete without credentials (click the account if an account-chooser appears).
@@ -116,13 +116,13 @@ For each fixed bug:
 
 1. Read 1-2 nearby test files to match the project's testing style
 2. Write a test that reproduces the bug scenario and asserts correct behavior
-3. Run: `cd webui && npx vitest run <test-file> --reporter=verbose`
+3. Run just that test with the repo's test command (per the touched package's `AGENTS.md`; in the dev container if the repo uses one)
 4. If passes, commit: `test(qa): regression test for ISSUE-NNN`
 5. If fails after one attempt, skip and note in report
 
 ### Evidence capture (required — reviewers judge on proof, not the diff)
 
-Collect reviewer-visible proof the change works, into `.claude/rdev/evidence/<ticket>/`:
+Collect reviewer-visible proof the change works, into `.claude/shield/evidence/<ticket>/`:
 - Screenshots of each key state (before/after the changed behavior), named by step.
 - For a flow, a numbered screenshot sequence (or a short screen recording if available).
 - For non-visual changes, the relevant command output / logs.
@@ -160,7 +160,7 @@ Push all fixes: `git push`
 ## Rules
 - Read the plan's QA Test Plan FIRST — don't ignore it
 - If not logged in, ask the user — don't try to automate auth
-- Capture evidence into `.claude/rdev/evidence/<ticket>/` and link it in the PR (see Evidence capture)
+- Capture evidence into `.claude/shield/evidence/<ticket>/` and link it in the PR (see Evidence capture)
 - Re-verify every fix in the browser before moving on
 - Don't fix cosmetic issues
 - Don't refactor while fixing — minimal changes only

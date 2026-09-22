@@ -1,4 +1,4 @@
-# rdev — AI Development Pipeline
+# shield — AI Development Pipeline
 
 Automated ticket-to-PR pipeline. Works on Claude Code, Codex, Cursor, Gemini CLI, pi.dev — any harness that reads `.claude/` skills and agents.
 
@@ -6,19 +6,19 @@ Automated ticket-to-PR pipeline. Works on Claude Code, Codex, Cursor, Gemini CLI
 
 ```bash
 # Option 1: Clone and copy
-git clone https://github.com/GetRhythms/rdev.git /tmp/rdev
-cp -r /tmp/rdev/package/skills/* .claude/skills/
-cp -r /tmp/rdev/package/agents/* .claude/agents/
+git clone https://github.com/s-ashwinkumar/shield.git /tmp/shield
+cp -r /tmp/shield/package/skills/* .claude/skills/
+cp -r /tmp/shield/package/agents/* .claude/agents/
 
 # Option 2: npx (coming soon)
-npx rdev-init
+npx shield-init
 ```
 
 ## Usage
 
 ```
-/start USENG-500              Start a ticket — fetch from Linear, plan
-/start USENG-500 --design     Full design process for larger features
+/start ENG-500                Start a ticket — fetch from your tracker, plan
+/start ENG-500 --design       Full design process for larger features
 /build                        Execute the plan — builder per task + review
 /review                       Cross-model code review (OpenAI reviews your code)
 /ship                         Push, create/update PR, address bot comments
@@ -34,7 +34,7 @@ npx rdev-init
 /start → /build → /review → /ship → done
 ```
 
-Each step updates `.claude/rdev/state.json`. You can stop and resume at any point. The pipeline remembers where you are.
+Each step updates `.claude/shield/state.json`. You can stop and resume at any point. The pipeline remembers where you are.
 
 ## Cross-Model Review
 
@@ -42,4 +42,4 @@ The `/review` skill automatically uses a different model family to review your c
 
 ## State
 
-Pipeline state lives in `.claude/rdev/state.json`. Plans persist in `docs/plans/<ticket>.md`.
+Pipeline state lives in `.claude/shield/state.json`. Plans persist in `docs/plans/<ticket>.md`.

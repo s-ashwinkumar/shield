@@ -9,7 +9,7 @@ completion.
 2. If a draft PR exists from QA, mark it ready; otherwise create one.
    Follow the PR conventions in CONTRIBUTING.md.
 3. The description must include:
-   - **Ticket link** (Linear).
+   - **Ticket link** (from the tracker, if there is one).
    - **Summary** — what changed and why, from the plan.
    - **Key changes** — the notable files/decisions.
    - **Evidence** — proof it works, captured during QA. Required, not
@@ -18,9 +18,9 @@ completion.
        were exercised, the steps walked, and the results — with text
        evidence inline (API/MCP responses, log excerpts, test output).
      - **Images/video go to the ticket, not the repo**: upload screenshots
-       or recordings as a QA comment on the Linear ticket, and link that
-       comment from the PR's evidence section. Never commit evidence files
-       into the repository.
+       or recordings as a QA comment on the ticket (if the tracker supports
+       uploads; else as a PR comment), and link that comment from the PR's
+       evidence section. Never commit evidence files into the repository.
 
 ## Comment rounds
 
@@ -30,7 +30,7 @@ is the `fix-pr` skill.)
 
 1. **Wait** for reviews to land (bots take a few minutes after each push).
 2. **Triage every comment** with the `receiving-code-review` discipline
-   (repo skill) — verify against the code before acting, no performative
+   (if the project provides that skill, use it) — verify against the code before acting, no performative
    agreement, push back with reasons when a reviewer is wrong: real issue →
    fix it; misunderstanding → explain; out of scope → say so and link the
    ticket that should own it.
@@ -57,17 +57,14 @@ phase movement via the PR–ticket link.
 The agent **never merges**. Merge is a human decision (and branch
 protection enforces it).
 
-## After dev-verified — two human follow-ups the agent tees up
+## After dev-verified — a human follow-up the agent tees up
 
-1. **Demo video (Supercut)** — if the change has a user-experience
-   component (feature of any size, or a UX-affecting bug fix), the
-   developer records a short demo on the **Railway preview** using
-   Supercut and posts it. The agent doesn't record it — it *tees it up*:
-   flag "demo needed" in its closing hand-off to the human, and persist
-   that it's pending so a later session knows.
-2. **Dogfood on dev1** — the work is dogfooded in the dev1 environment.
-   Once the demo (if needed) is posted and review is underway, the work
-   can be called **ready for dev1** per team convention.
+**Demo video** — if the change is user-facing (feature of any size, or a
+UX-affecting bug fix) and the team records demos, the developer records a
+short demo (on the preview, if there is one) and posts it. The agent
+doesn't record it — it *tees it up*: flag "demo needed" in its closing
+hand-off to the human, and persist that it's pending (`demo_required`) so a
+later session knows.
 
 Done = comments addressed, evidence attached, CI green, human review
-requested, demo/dev1 follow-ups flagged.
+requested, demo follow-up flagged.

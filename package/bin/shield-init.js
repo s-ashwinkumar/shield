@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// rdev-init — npm shim that runs the bash installer against the user's CWD.
+// shield-init — npm shim that runs the bash installer against the user's CWD.
 // Resolves the package root (where setup + skills/ + agents/ live) and execs setup.
 
 const { spawnSync } = require('child_process');
@@ -10,13 +10,13 @@ const pkgRoot = path.resolve(__dirname, '..');
 const setupScript = path.join(pkgRoot, 'setup');
 
 if (!fs.existsSync(setupScript)) {
-  console.error(`rdev-init: setup script not found at ${setupScript}`);
+  console.error(`shield-init: setup script not found at ${setupScript}`);
   console.error('Reinstall the package — files may be corrupted.');
   process.exit(1);
 }
 
 if (process.platform === 'win32') {
-  console.error('rdev-init: Windows is not supported. The installer requires bash.');
+  console.error('shield-init: Windows is not supported. The installer requires bash.');
   console.error('Workarounds: use WSL2, or clone the repo and run setup from a Unix shell.');
   process.exit(1);
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# rdev install -- Provision local AI dev environment
+# shield install -- Provision the S.H.I.E.L.D. agent harness
 set -euo pipefail
 
-RDEV_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/rdev"
+SHIELD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/shield"
 BIN_DIR="$HOME/.local/bin"
 NON_INTERACTIVE=false
 
@@ -28,8 +28,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo ""
-echo "rdev -- Local AI Dev Environment"
-echo "================================"
+echo "S.H.I.E.L.D. -- agent harness setup"
+echo "==================================="
 echo ""
 
 # ─── Prerequisites ───────────────────────────────────────────────────────────
@@ -100,8 +100,8 @@ fi
 # gh CLI for PR creation
 check_cmd gh true "" "install from https://cli.github.com" || true
 
-# Check devcontainer CLI (optional)
-check_cmd devcontainer false "" "npm install -g @devcontainers/cli (needed for rdev command)" || true
+# docker (optional) -- only for repos that set CONTAINER in .shield/config
+check_cmd docker false "" "only needed for repos that set CONTAINER in .shield/config" || true
 
 echo ""
 
@@ -115,65 +115,56 @@ fi
 echo "Configuration"
 echo "─────────────"
 echo ""
+echo "  shield works on any git repo: run it from inside the repo, or pass"
+echo "  'shield -C <name>' to pick one under your projects root."
+echo ""
 
-# Default project directory -- always rhythms, not the rdev repo itself
-DETECTED_DIR=""
-if [[ -d "$HOME/code/rhythms" ]]; then
-  DETECTED_DIR="$HOME/code/rhythms"
-fi
+DEFAULT_ROOT="$(dirname "$SHIELD_ROOT")"   # the dir this checkout lives in, e.g. ~/code
 
-if [[ "$NON_INTERACTIVE" == "true" ]]; then
-  RHYTHMS_DIR="${DETECTED_DIR:-$HOME/code/rhythms}"
-  WORKTREE_DIR="${RHYTHMS_DIR}/.claude/worktrees"
-  DEVCONTAINER="fullstack"
+if [[ -f "$CONFIG_DIR/config" ]]; then
+  ok "Keeping existing config at $CONFIG_DIR/config"
 else
-  read -rp "  Project directory [${DETECTED_DIR:-$HOME/code/rhythms}]: " RHYTHMS_DIR
-  RHYTHMS_DIR="${RHYTHMS_DIR:-${DETECTED_DIR:-$HOME/code/rhythms}}"
+  if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    PROJECTS_ROOT="$DEFAULT_ROOT"
+    DEFAULT_PROJECT=""
+  else
+    read -rp "  Projects root (where your repos live) [$DEFAULT_ROOT]: " PROJECTS_ROOT
+    PROJECTS_ROOT="${PROJECTS_ROOT:-$DEFAULT_ROOT}"
+    read -rp "  Default project when outside a repo (optional, name or path) []: " DEFAULT_PROJECT
+  fi
+  PROJECTS_ROOT="${PROJECTS_ROOT/#\~/$HOME}"
+  DEFAULT_PROJECT="${DEFAULT_PROJECT/#\~/$HOME}"
+  if [[ -n "$DEFAULT_PROJECT" && "$DEFAULT_PROJECT" != /* ]]; then
+    DEFAULT_PROJECT="$PROJECTS_ROOT/$DEFAULT_PROJECT"
+  fi
 
-  DEFAULT_WT="${RHYTHMS_DIR}/.claude/worktrees"
-  read -rp "  Worktree directory [$DEFAULT_WT]: " WORKTREE_DIR
-  WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WT}"
-
-  read -rp "  Devcontainer [fullstack]: " DEVCONTAINER
-  DEVCONTAINER="${DEVCONTAINER:-fullstack}"
+  info "Writing config to $CONFIG_DIR/config"
+  mkdir -p "$CONFIG_DIR"
+  sed \
+    -e "s|{projects_root}|$PROJECTS_ROOT|g" \
+    -e "s|{default_project}|$DEFAULT_PROJECT|g" \
+    "$SHIELD_ROOT/config/config.example" > "$CONFIG_DIR/config"
+  ok "Config written"
 fi
-
-# Expand tildes
-RHYTHMS_DIR="${RHYTHMS_DIR/#\~/$HOME}"
-WORKTREE_DIR="${WORKTREE_DIR/#\~/$HOME}"
 
 echo ""
 
-# ─── Write Config ────────────────────────────────────────────────────────────
+# ─── Link the shield command ─────────────────────────────────────────────────
 
-info "Writing config to $CONFIG_DIR/config"
-mkdir -p "$CONFIG_DIR"
-
-sed \
-  -e "s|{rhythms_dir}|$RHYTHMS_DIR|g" \
-  -e "s|{worktree_dir}|$WORKTREE_DIR|g" \
-  "$RDEV_ROOT/config/config.example" > "$CONFIG_DIR/config"
-
-sed -i '' "s|^DEVCONTAINER=.*|DEVCONTAINER=$DEVCONTAINER|" "$CONFIG_DIR/config"
-
-ok "Config written"
-
-# ─── Symlink Scripts ─────────────────────────────────────────────────────────
-
-info "Symlinking scripts to $BIN_DIR"
+info "Linking shield into $BIN_DIR"
 mkdir -p "$BIN_DIR"
-
-for script in "$RDEV_ROOT"/bin/*; do
-  name="$(basename "$script")"
-  [[ "$name" == _* ]] && continue  # Skip library files
-  chmod +x "$script"
-  ln -sf "$script" "$BIN_DIR/$name"
+chmod +x "$SHIELD_ROOT"/bin/shield "$SHIELD_ROOT"/libexec/shield-*
+# Drop links to commands this checkout no longer ships (shield is the only one).
+for link in "$BIN_DIR"/*; do
+  [[ -L "$link" ]] || continue
+  target="$(readlink "$link")"
+  if [[ "$target" == "$SHIELD_ROOT"/bin/* && ! -e "$target" ]]; then
+    rm -f "$link"
+    ok "Removed stale link $(basename "$link")"
+  fi
 done
-
-# Also make library executable
-chmod +x "$RDEV_ROOT/bin/_rdev_lib.sh"
-
-ok "Scripts symlinked"
+ln -sf "$SHIELD_ROOT/bin/shield" "$BIN_DIR/shield"
+ok "shield linked"
 
 # ─── Ensure PATH ─────────────────────────────────────────────────────────────
 
@@ -183,10 +174,10 @@ if [[ "$(basename "$SHELL")" == "bash" ]]; then
 fi
 
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^$BIN_DIR$"; then
-  if ! grep -q '# rdev PATH' "$SHELL_RC" 2>/dev/null; then
+  if ! grep -qF "$BIN_DIR" "$SHELL_RC" 2>/dev/null; then
     info "Adding $BIN_DIR to PATH in $SHELL_RC"
     echo '' >> "$SHELL_RC"
-    echo '# rdev PATH' >> "$SHELL_RC"
+    echo '# shield PATH' >> "$SHELL_RC"
     echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$SHELL_RC"
     ok "PATH updated (restart shell or: source $SHELL_RC)"
   else
@@ -196,30 +187,20 @@ else
   ok "$BIN_DIR already in PATH"
 fi
 
-# ─── Create Worktree Directory ───────────────────────────────────────────────
-
-if [[ ! -d "$WORKTREE_DIR" ]]; then
-  info "Creating worktree directory: $WORKTREE_DIR"
-  mkdir -p "$WORKTREE_DIR"
-  ok "Worktree directory created"
-else
-  ok "Worktree directory exists"
-fi
-
 # ─── Verify agents directory ──────────────────────────────────────────────────
 
-if [[ -d "$RDEV_ROOT/agents" ]]; then
-  agent_count=$(ls "$RDEV_ROOT"/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
-  ok "Found $agent_count agent definitions (coordinator, builder, reviewer)"
+if [[ -d "$SHIELD_ROOT/agents" ]]; then
+  agent_count=$(ls "$SHIELD_ROOT"/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
+  ok "Found $agent_count agent definitions (coordinator, builder, reviewer, coulson)"
 else
-  fail "agents/ directory not found in rdev repo"
+  fail "agents/ directory not found in the shield repo"
 fi
 
 # ─── Trigger Notification Permission ─────────────────────────────────────────
 
 if command -v terminal-notifier &>/dev/null; then
   info "Triggering notification permission prompt..."
-  terminal-notifier -title "rdev" -message "Setup complete! Notifications enabled." -sound default -group rdev 2>/dev/null || true
+  terminal-notifier -title "shield" -message "Setup complete! Notifications enabled." -sound default -group shield 2>/dev/null || true
   ok "Notification permission requested"
 fi
 
@@ -227,22 +208,22 @@ fi
 
 echo ""
 echo "════════════════════════════════════════"
-echo -e "${GREEN}rdev installed successfully!${NC}"
+echo -e "${GREEN}shield installed successfully!${NC}"
 echo "════════════════════════════════════════"
 echo ""
 echo "  Config:     $CONFIG_DIR/config"
-echo "  Scripts:    $BIN_DIR/{rdev,rstream,rbuild,rforward,rresume,rstatus,rclean}"
-echo "  Agents:     $RDEV_ROOT/agents/{coordinator,builder,reviewer}.md"
-echo "  Worktrees:  $WORKTREE_DIR"
+echo "  Command:    $BIN_DIR/shield"
+echo "  Per-repo:   <repo>/.shield/config (optional — see $SHIELD_ROOT/config/project.example)"
 echo ""
-echo "Workflow:"
-echo "  rdev                          # Start Herdr workspace + services"
-echo "  rstream USENG-492             # Create workstream, plan with agent"
-echo "  rbuild USENG-492              # Approve plan → autonomous build"
-echo "  rforward USENG-492            # Satisfied → code review loop"
-echo "  rresume USENG-492             # Resume completed stream for more work"
-echo "  rstatus                       # See what's running"
-echo "  rclean USENG-492              # Clean up when done"
+echo "Workflow (from inside a repo, or with -C <repo>):"
+echo "  shield up                     # Create the repo's Herdr workspace"
+echo "  shield stream ENG-492         # Create workstream, plan with agent"
+echo "  shield build ENG-492          # Approve plan → autonomous build"
+echo "  shield forward ENG-492        # Satisfied → code review loop"
+echo "  shield resume ENG-492         # Resume completed stream for more work"
+echo "  shield status --all           # See what's running, across repos"
+echo "  shield clean ENG-492          # Clean up when done"
+echo "  shield coulson                # One handler watching every stream"
 echo ""
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^$BIN_DIR$"; then
   echo -e "${YELLOW}Note: Restart your shell or run: source $SHELL_RC${NC}"

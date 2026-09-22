@@ -26,14 +26,14 @@ Requires a browser-automation tool (Playwright MCP, Puppeteer MCP, or equivalent
 Read these in order before opening the browser:
 
 1. **Plan's QA Test Plan** — `docs/plans/<ticket>*.md`, "QA Test Plan" section. Primary source: tells you what pages, what steps, what "correct" looks like.
-2. **Ticket context** — `.claude/rdev/<ticket>.md` for acceptance criteria.
-3. **App QA context** — `docs/rdev/qa-context.md`. Describes app URL, auth, navigation, common patterns. (If the file is missing or still a template, ask the user for the missing pieces before testing.)
+2. **Ticket context** — `.claude/shield/<ticket>.md` for acceptance criteria.
+3. **App QA context** — `docs/shield/qa-context.md`. Describes app URL, auth, navigation, common patterns. (If the file is missing or still a template, ask the user for the missing pieces before testing.)
 4. **Diff-aware inference** (fallback): `git diff main --name-only` → map changed files to routes using the project's routing convention.
 5. **Ask the user** if none of the above tell you what to test.
 
 ## Phase 1: Auth Check
 
-Navigate to the app URL (default `http://localhost:3000`, or from `docs/rdev/qa-context.md`).
+Navigate to the app URL from `docs/shield/qa-context.md` — the PR's preview deployment if the project has one, else the app running locally (e.g. `http://localhost:3000`).
 
 - App not running (connection refused) → tell the user and stop.
 - Landed on a login page → **ask the user to log in manually** in the browser window. Wait for confirmation. Do not automate auth.

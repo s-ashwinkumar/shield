@@ -1,41 +1,52 @@
 #!/usr/bin/env bash
 # shield -- S.H.I.E.L.D.: Strategic Herding, Intervention, Escalation & LLM Dispatch.
-# The front door. Routes subcommands to the harness scripts (r* names still work).
+# The front door. `shield <verb>` runs libexec/shield-<verb>.
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+SHIELD_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+LIBEXEC="$SHIELD_ROOT/libexec"
+
+usage() {
+  cat <<'EOF'
+S.H.I.E.L.D. — Strategic Herding, Intervention, Escalation & LLM Dispatch
+
+Usage: shield [-C <path|name>] <verb> [args...]
+
+  -C <path|name>   act on this project (a path, or a repo name under PROJECTS_ROOT).
+                   Default: the git repo you are in, else DEFAULT_PROJECT.
+
+  shield up                 create/focus the project's Herdr workspace
+  shield stream <ticket>    dispatch an agent (worktree + coordinator)
+  shield build|forward|resume|clean|switch <stream>   stream lifecycle
+  shield send <stream> <msg>          relay a message into a stream's live agent
+  shield peek <stream> [n]            read the tail of a stream's pane
+  shield focus <stream>               jump to a stream's tab
+  shield status [--all]     fleet at a glance (all projects)
+  shield coulson            put Coulson on duty (fleet watcher + attention handler)
+  shield watch [status]     the fleet watcher alone (SHIELD_WATCH_SHADOW=1 for shadow mode)
+  shield usage [--roles]    token/cost accounting (counterfactual, not a bill)
+  shield browser            ensure the shared QA Chrome (:9222)
+  shield gate|deps|notify|sync-skills   agent-facing helpers
+  shield mux <verb>         substrate adapter (herdr)
+
+Per-repo settings live in <repo>/.shield/config (see config/project.example).
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -C|--project) export SHIELD_PROJECT="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
 
 sub="${1:-help}"; shift 2>/dev/null || true
 case "$sub" in
-  stream)   exec "$SCRIPT_DIR/rstream"     "$@" ;;   # dispatch an agent of S.H.I.E.L.D.
-  coulson)  exec "$SCRIPT_DIR/rcaptain"    "$@" ;;   # put the handler on duty
-  watch)    exec "$SCRIPT_DIR/rfleet"      "$@" ;;   # fleet watcher (deterministic)
-  status)   exec "$SCRIPT_DIR/rstatus"     "$@" ;;
-  usage)    exec "$SCRIPT_DIR/rusage"      "$@" ;;
-  browser)  exec "$SCRIPT_DIR/rqa-browser" "$@" ;;
-  build)    exec "$SCRIPT_DIR/rbuild"      "$@" ;;
-  forward)  exec "$SCRIPT_DIR/rforward"    "$@" ;;
-  resume)   exec "$SCRIPT_DIR/rresume"     "$@" ;;
-  clean)    exec "$SCRIPT_DIR/rclean"      "$@" ;;
-  switch)   exec "$SCRIPT_DIR/rswitch"     "$@" ;;
-  send)     exec "$SCRIPT_DIR/rsend"       "$@" ;;
-  peek)     exec "$SCRIPT_DIR/rpeek"       "$@" ;;
-  mux)      exec "$SCRIPT_DIR/rdev-mux"    "$@" ;;
-  help|--help|-h|*)
-    cat <<'EOF'
-S.H.I.E.L.D. — Strategic Herding, Intervention, Escalation & LLM Dispatch
-
-  shield stream <ticket>   dispatch an agent of S.H.I.E.L.D. (worktree + coordinator)
-  shield coulson           put Coulson on duty (fleet watcher + attention handler)
-  shield watch             run the fleet watcher alone (RFLEET_SHADOW=1 for shadow mode)
-  shield status            fleet at a glance
-  shield usage [--roles]   token/cost accounting (counterfactual, not a bill)
-  shield browser           ensure the shared QA Chrome (:9222)
-  shield send <stream> <msg>          relay a message into a stream's live agent
-  shield peek <stream> [n]            read the tail of a stream's pane
-  shield build|forward|resume|clean|switch   stream lifecycle
-  shield mux <verb>        substrate adapter (herdr)
-
-Legacy r*-prefixed commands still work.
-EOF
-    ;;
+  help|--help|-h) usage ;;
+  *)
+    if [[ "$sub" != _* && -x "$LIBEXEC/shield-$sub" ]]; then
+      exec "$LIBEXEC/shield-$sub" "$@"
+    fi
+    echo "shield: unknown verb '$sub'" >&2
+    usage >&2
+    exit 2 ;;
 esac

@@ -15,9 +15,9 @@ implementation. The [stage 0 triage](0-setup.md) picks the mode:
 
 ## Lightweight (bugs, small tickets, focused changes)
 
-1. Explore the relevant code. Read the `AGENTS.md` of every service you'll
-   touch (webui / railsapi / mlai / mcpservers) — they hold the conventions
-   and test commands.
+1. Explore the relevant code. Read the `AGENTS.md` / `CLAUDE.md` of every
+   service/package you'll touch — they hold the conventions and test
+   commands.
 2. Ask the ticket owner **1–2 clarifying questions** if anything is ambiguous
    (not ten).
 3. Propose **one recommended approach** — no need for alternatives.

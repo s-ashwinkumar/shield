@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# shield up -- Create/focus the project's Herdr workspace (holds all stream tabs).
+# One workspace per project; each `shield stream <ticket>` then opens a tab
+# (coordinator + shell panes) inside it.
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+shield_resolve_project
+
+WS_NAME="${1:-$WORKSPACE}"
+
+# Herdr's persistent server is the "session". Require it up.
+if ! mux server-ensure >/dev/null 2>&1; then
+  echo "Herdr server not running. Launch it once with 'herdr', then re-run: shield up" >&2
+  exit 1
+fi
+
+# Find-or-create the project workspace.
+WS_ID="$(mux space-ensure --name "$WS_NAME" --cwd "$PROJECT_DIR")"
+if [[ -z "$WS_ID" ]]; then
+  echo "Error: could not create/find Herdr workspace '$WS_NAME'." >&2
+  echo "Check: herdr status server" >&2
+  exit 1
+fi
+
+herdr workspace focus "$WS_ID" >/dev/null 2>&1 || true
+echo "Herdr workspace '$WS_NAME' ready ($WS_ID)."
+echo "Open streams inside it:  shield stream <ticket>"

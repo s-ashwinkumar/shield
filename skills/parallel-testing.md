@@ -5,57 +5,51 @@ description: How to test a change without colliding with the many other agents a
 
 ## Parallel testing — coexistence rules
 
-Many streams run at once (10+), plus the user, all sharing **one dev container**.
-Local tests must not step on each other; the running app is QA'd on **per-PR
-Railway previews**, not a shared local server. Pick the **lowest tier that proves
-your change** — lower tiers are cheaper and have no contention.
+Many streams run at once (10+), plus the user, often sharing **one dev machine
+or dev container**. Local tests must not step on each other; the running app is
+QA'd on **per-PR preview deployments** when the project has them, otherwise
+locally per the repo's docs. Pick the **lowest tier that proves your change** —
+lower tiers are cheaper and have no contention.
 
-Actual test/lint/typecheck commands live in each touched service's `AGENTS.md`
-(webui / railsapi / mlai / mcpservers). This skill only covers the *coordination*
-layer that those commands don't.
+Actual test/lint/typecheck commands live in each touched service/package's
+`AGENTS.md` / `CLAUDE.md`. This skill only covers the *coordination* layer that
+those commands don't.
 
-### Tier 1 — Unit / component tests (no shared state)
+### Tier 1 — Pure unit tests (no shared state)
 
-Pure unit and component tests (e.g. webui component tests, rails specs that don't
-touch the DB). **Run freely and in parallel — no coordination needed.** Always
-prefer these; they cover most changes.
+Pure unit and component tests (no DB, no network, no fixed ports). **Run freely
+and in parallel, anywhere — no coordination needed.** Always prefer these; they
+cover most changes.
 
-### Tier 2 — DB-backed tests (auto-isolated per worktree)
+### Tier 2 — Tests with shared mutable state (DBs, ports)
 
-Integration tests that hit Postgres. Safe to run in parallel across worktrees
-**because each worktree gets its own database**, keyed off `RDEV_DB_SUFFIX`
-(set automatically in the worktree's `.local.env` by `rstream`). Never point tests
-at mainline's database.
+Integration tests that hit a database, bind a port, or write shared files. Safe
+to run in parallel across worktrees **only if each worktree is isolated** — its
+own database, its own ports. The repo's `.shield/setup` hook (run in each new
+worktree; path set by `SETUP_HOOK` in `.shield/config`) is the place to provide
+that, e.g. derive a per-worktree DB name from `$SHIELD_STREAM` and write it into
+the worktree's env file.
 
-- **railsapi** — isolation is automatic. Run the standard test-DB prep in the
-  worktree first (`RAILS_ENV=test bundle exec rake db:prepare`, or `db:reset` to
-  rebuild), which reads the suffixed `database.yml` and creates
-  `habits_rob_test<suffix>`. Then run rspec per railsapi/AGENTS.md.
-- **mlai** — run **`rmlai`** once in the worktree first. It creates + migrates
-  this worktree's isolated mlai dev DB (`rhythms_mlai_development<suffix>`). Then
-  run the mlai test command from mlai/AGENTS.md. (mlai tests roll back their data,
-  but the isolated DB is what prevents cross-branch *schema/migration* collisions.)
-- If `RDEV_DB_SUFFIX` is empty you're on mainline — do NOT run destructive DB prep
-  there; you'd be resetting the shared dev database.
+- **Isolated** → run the test-DB prep and tests per the service's `AGENTS.md`
+  (in the dev container if `.shield/config` sets `CONTAINER`).
+- **No isolation** (no setup hook, or the worktree points at the shared dev DB)
+  → do NOT run destructive DB prep (reset / drop / re-migrate); you'd be
+  resetting everyone's database. Tell the user, and fall back to Tier 1 plus CI
+  on the pushed branch.
 
-### Tier 3 — Running app / browser / e2e / lighthouse / UX QA
+### Tier 3 — Running app / browser / e2e / UX QA
 
-QA the running app on its **Railway preview**, not a local server. Opening a
-**draft PR** auto-creates a per-PR Railway environment — isolated, real, zero
-local contention (no shared server, no lease). Derive the URL straight from the
-PR number, no lookup needed:
-
-- webui: `https://webui-rhythms-pr-<PR>.up.railway.app/`
-
-To QA a UI change:
-1. Ensure a **draft PR** is open for the branch (open one if needed) — that
-   triggers the Railway build.
-2. Wait for the preview to finish deploying (a few minutes after the push).
-3. Point `/qa` / the browser at `https://webui-rhythms-pr-<PR>.up.railway.app/`.
-
-There is **no local live-server promote** here — `rpromote`/`runpromote`/`rlocal`
-are parked. Fast local multi-port app servers may return later; until then,
-Railway is the QA path.
+- **Preview deployments** (`preview_url_pattern` set in `.claude/shield/state.json`,
+  e.g. `https://myapp-pr-{pr}.example.com`) → QA the PR's preview — isolated,
+  real, zero local contention. Derive the URL straight from the PR number
+  (`gh pr view --json number -q .number`), no lookup needed.
+  1. Ensure a **draft PR** is open for the branch (open one if needed) — that
+     usually triggers the preview build.
+  2. Wait for the preview to finish deploying (a few minutes after the push).
+  3. Point `/qa` / the browser at the preview URL.
+- **No preview** → run the app locally from the worktree, started per the repo's
+  docs, on ports no other stream is using; don't reuse or restart another
+  stream's server.
 
 ### Quick decision
 
@@ -64,6 +58,5 @@ Every change gets a QA round (coordinator Stage 4) — the tiers only decide *ho
 - Change is logic / back-end only → Tier 1/2 locally, then QA by exercising the
   real behavior (API calls / jobs / logs) — preview env where available,
   otherwise the worktree's isolated Tier 2 setup. Capture outputs as PR evidence.
-- Change touches `webui/` UI → Tier 1/2 locally first, then Tier 3: open a draft PR
-  and QA on `https://webui-rhythms-pr-<PR>.up.railway.app/`. Capture screenshots
-  as PR evidence.
+- Change touches UI → Tier 1/2 locally first, then Tier 3: the PR's preview (open
+  a draft PR) or the local app. Capture screenshots as PR evidence.

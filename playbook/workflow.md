@@ -1,15 +1,14 @@
 # Ticket workflow
 
-The end-to-end flow for taking a piece of work (usually a Linear ticket)
+The end-to-end flow for taking a piece of work (usually a ticket)
 from intake to a merged PR. It is **tool-neutral**: you can follow it by
 hand or with any coding agent (Cursor, Codex, Claude Code, ...). Each stage
 links to a short doc with the details — this page is only the flow.
 
 > **Status: opt-in.** This workflow is an option, not (yet) the team standard.
-> It is currently distributed by the rdev harness (copied into each worktree
-> at `.claude/rdev/playbook/`) and piloted in-repo on the rhythms branch
-> `ashwin/dev-workflow-pilot`; when the team adopts it, it moves into the
-> rhythms repo as `docs/workflow.md` verbatim. Use it by telling your tool:
+> It is distributed by the shield harness (copied into each worktree at
+> `.claude/shield/playbook/`) and can be adopted into any repo verbatim
+> (e.g. as `docs/workflow.md`). Use it by telling your tool:
 > *"Follow the workflow playbook for this ticket."*
 
 ## The flow
@@ -19,7 +18,7 @@ flowchart LR
     S0["0 · Set up<br/>ticket · triage · branch"] --> S1["1 · Plan<br/>plan file + QA test plan"]
     S1 --> S2["2 · Build<br/>only stage that writes code"]
     S2 --> S3["3 · Review<br/>fresh eyes, other model"]
-    S3 --> S4["4 · QA<br/>whole rounds, Railway preview"]
+    S3 --> S4["4 · QA<br/>whole rounds, preview or local"]
     S4 --> S5["5 · Ship<br/>PR + evidence"]
     S5 --> DONE(["✅ done"])
 
@@ -30,7 +29,7 @@ flowchart LR
     S1 -- "approve plan (gate)" --> H
     S3 -. "not converging ⚠" .-> H
     S4 -. "not converging ⚠" .-> H
-    DONE -- "review + demo + dev1" --> H
+    DONE -- "review + demo" --> H
 ```
 
 Not drawn (see the loops below): the re-plan hatch back to Plan, and comment
@@ -132,7 +131,7 @@ instructions win). Three known collisions, by name:
 
 ## Rules that hold across all stages
 
-- Never work on `main` — always the work's own branch (see stage 0).
+- Never work on the base branch (e.g. `main`) — always the work's own branch (see stage 0).
 - The plan in `docs/plans/<ticket-id>.md` is the source of truth for scope,
   and its **Progress** section is the source of truth for position: update
   it at every stage transition and loop round; on any fresh session, read

@@ -1,4 +1,4 @@
-# rdev — AI Development Pipeline
+# shield — AI Development Pipeline
 
 A ticket-to-PR pipeline that works with any AI coding tool. The process is defined in plain markdown — your tool reads it and follows it.
 
@@ -22,7 +22,7 @@ A ticket-to-PR pipeline that works with any AI coding tool. The process is defin
 
 ## State
 
-Pipeline state lives in `.rdev/state.json` (gitignored). Plans persist in `docs/plans/<ticket>.md` (committed).
+Pipeline state lives in `.shield/state/state.json` (gitignored). Plans persist in `docs/plans/<ticket>.md` (committed).
 
 ## Cross-Model Review
 
@@ -30,10 +30,10 @@ The review step MUST use a different model than the one that wrote the code. Thi
 
 ## Install
 
-Run `./setup` from the rdev package root, or `npx rdev-init` from your project. The installer detects your AI tool and drops the right adapter in place.
+Run `./setup` from the shield package root, or `npx shield-init` from your project. The installer detects your AI tool and drops the right adapter in place.
 
 Manual install:
 - **Claude Code**: skills + agents land in `.claude/`
-- **Cursor**: a rules file lands in `.cursor/rules/rdev.md`
+- **Cursor**: a rules file lands in `.cursor/rules/shield.md`
 - **Codex CLI**: an instructions block lands in `.codex/instructions.md`
-- **Any other tool**: point it at `docs/rdev/` and tell it to follow the named step.
+- **Any other tool**: point it at `docs/shield/` and tell it to follow the named step.

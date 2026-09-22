@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""rusage -- Summarize Claude Code token usage across all sessions.
+"""shield usage -- Summarize Claude Code token usage across all sessions.
 
 Reads the local transcripts (~/.claude/projects/*/*.jsonl), sums token usage,
 and estimates the equivalent API cost. NOTE: on a subscription plan this is a
 counterfactual ("what this would cost at API list prices"), not a bill.
 
-Usage: rusage [--roles] [--days N]
+Usage: shield usage [--roles] [--days N]
 """
 
 import json
@@ -111,13 +111,13 @@ def role_of(s):
     transcript, then the session title, then the project path (worktrees
     are per-stream project dirs).
     """
-    if s["agent_names"] & {"coulson", "captain"} or s["name"] in ("rdev:coulson", "rdev:captain"):
+    if s["agent_names"] & {"coulson", "captain"} or s["name"] in ("shield:coulson", "shield:captain"):
         return "captain"
     if s["agent_names"] & {"coordinator", "builder", "reviewer"}:
         return "stream"
     if "-worktrees-" in s["project"] or "/worktrees/" in s["cwd"]:
         return "stream"
-    if "rdev:" in (s["name"] or ""):
+    if "shield:" in (s["name"] or ""):
         return "stream"
     return "other"
 
@@ -149,7 +149,7 @@ def main():
         try:
             days_filter = int(args[args.index("--days") + 1])
         except (IndexError, ValueError):
-            print("Usage: rusage [--roles] [--days N]")
+            print("Usage: shield usage [--roles] [--days N]")
             return
 
     projects_dir = Path.home() / ".claude" / "projects"

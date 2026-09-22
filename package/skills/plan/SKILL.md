@@ -11,7 +11,7 @@ Arguments: $ARGUMENTS
 Use this when:
 - The plan from `/start` is stale and needs a rewrite
 - You're adding a sub-feature within an existing branch
-- There's no Linear ticket — you're planning something ad-hoc
+- There's no ticket — you're planning something ad-hoc
 - You want to re-plan after discovering the original approach won't work
 
 If you need ticket fetching + branch setup too, use `/start` instead.
@@ -20,7 +20,7 @@ If you need ticket fetching + branch setup too, use `/start` instead.
 
 Determine the plan path:
 
-1. Read `.claude/rdev/state.json` if it exists. Use `docs/plans/<ticket>.md` if `ticket` is set.
+1. Read `.claude/shield/state.json` if it exists. Use `docs/plans/<ticket>.md` if `ticket` is set.
 2. Otherwise, use the current branch name: `docs/plans/<branch-name>.md`.
 3. If a topic is in arguments and no plan exists, use a slug of the topic: `docs/plans/<slug>.md`.
 
@@ -28,10 +28,10 @@ If the file already exists, **read it before planning** — don't overwrite with
 
 ### Step 2: Gather Context
 
-- Read `.claude/rdev/<ticket>.md` if it exists (ticket context from `/start`).
+- Read `.claude/shield/<ticket>.md` if it exists (ticket context from `/start`).
 - Read `CLAUDE.md` / `AGENTS.md` for the services you're touching.
 - Run `git diff main --stat` to see what's already changed on this branch.
-- Read any reference files in `.claude/rdev/refs/` — these are stash files the user dropped for the planner/builder.
+- Read any reference files in `.claude/shield/refs/` — these are stash files the user dropped for the planner/builder.
 
 ### Step 3: Plan
 
@@ -111,7 +111,7 @@ Bite-sized, in execution order. Each task should be completable by a builder age
 
 Save to the path determined in Step 1.
 
-If `.claude/rdev/state.json` exists, update `"stage": "plan"`.
+If `.claude/shield/state.json` exists, update `"stage": "plan"`.
 
 Tell the user: "Plan ready at `<path>`. Say `/build` to start building."
 
@@ -119,7 +119,7 @@ Tell the user: "Plan ready at `<path>`. Say `/build` to start building."
 
 - Read the existing plan if one exists — never overwrite blind.
 - Always brainstorm before writing. No skipping planning.
-- Plans go in `docs/plans/`, not `.claude/rdev/`. State stays in `.claude/rdev/`.
+- Plans go in `docs/plans/`, not `.claude/shield/`. State stays in `.claude/shield/`.
 - Tasks must be bite-sized and ordered. Builder agents do one task at a time.
 - Include file paths in tasks. "Add X" without a path is a bad task.
 - If the change touches UI, the QA Test Plan section is mandatory.

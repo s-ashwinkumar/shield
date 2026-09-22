@@ -2,11 +2,11 @@
 
 > This file describes your app to the QA agent so it knows how to navigate, log in,
 > and what UI patterns to expect. The installer copied this template into
-> `docs/rdev/qa-context.md` — **customize every section** for your app, then commit it.
+> `docs/shield/qa-context.md` — **customize every section** for your app, then commit it.
 > Delete this banner once you're done.
 
 ## Auth
-- App URL: http://localhost:3000
+- App URL: http://localhost:3000 &lt;or your PR preview pattern, e.g. `https://myapp-pr-{pr}.example.com`&gt;
 - Login: &lt;how login works — e.g. "Google OAuth at /login" or "form at /signin"&gt;
 - If not logged in (redirected to login page), ASK THE USER to log in manually in the browser, then continue
 

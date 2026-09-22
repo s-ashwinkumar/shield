@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# rqa-browser — ensure the dedicated QA Chrome is running.
+# shield browser — ensure the dedicated QA Chrome is running.
 #
 # One long-lived Chrome instance, remote-debuggable on :9222, with its own
-# persistent profile (~/.rdev/qa-chrome) kept signed into the QA Google
+# persistent profile (~/.shield/qa-chrome) kept signed into the QA Google
 # account. All streams' chrome-devtools MCP servers ATTACH to it (no
 # per-session launches → no profile-lock races, no login walls).
 # Idempotent: safe to run before every QA round.
 set -euo pipefail
 
-PORT="${RQA_PORT:-9222}"
-PROFILE="${RQA_PROFILE:-$HOME/.rdev/qa-chrome}"
+PORT="${SHIELD_QA_PORT:-9222}"
+PROFILE="${SHIELD_QA_PROFILE:-${SHIELD_HOME:-$HOME/.shield}/qa-chrome}"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 if curl -s --max-time 2 "http://127.0.0.1:${PORT}/json/version" >/dev/null 2>&1; then

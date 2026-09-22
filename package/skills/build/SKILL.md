@@ -8,11 +8,11 @@ argument-hint: "[--god]"
 
 Arguments: $ARGUMENTS
 
-If `--god` is present, set `god_mode: true` in `.claude/rdev/state.json`. All subsequent stages run without user gates.
+If `--god` is present, set `god_mode: true` in `.claude/shield/state.json`. All subsequent stages run without user gates.
 
 ### Step 1: Read Plan
 
-Read the plan from `docs/plans/<ticket>*.md` (check `.claude/rdev/state.json` for ticket ID).
+Read the plan from `docs/plans/<ticket>*.md` (check `.claude/shield/state.json` for ticket ID).
 
 If no plan exists, tell the user to run `/start` first.
 
@@ -40,7 +40,7 @@ Dispatch the builder with the full plan as a single task.
 
 ### Step 3: Check for UI Changes
 
-Determine whether any frontend / UI files changed. Use the project's convention for where UI code lives — common patterns: `webui/`, `web/`, `frontend/`, `app/`, `client/`, or files matching `*.tsx`, `*.vue`, `*.svelte`. `docs/rdev/qa-context.md` may name the directory explicitly.
+Determine whether any frontend / UI files changed. Use the project's convention for where UI code lives — common patterns: `web/`, `frontend/`, `app/`, `client/`, or files matching `*.tsx`, `*.vue`, `*.svelte`. `docs/shield/qa-context.md` may name the directory explicitly.
 
 ```bash
 git diff main --name-only
@@ -59,7 +59,7 @@ Tell user "No UI changes. Run `/review` to start code review."
 
 ### Step 4: Update State
 
-Update `.claude/rdev/state.json`: `"stage": "build_complete"`
+Update `.claude/shield/state.json`: `"stage": "build_complete"`
 
 ## Rules
 - Always read AGENTS.md for each service before dispatching builder

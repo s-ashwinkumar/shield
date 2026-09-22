@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# rdev uninstall -- Clean removal of rdev
+# shield uninstall -- Clean removal of shield (leaves your repos and worktrees alone)
 set -euo pipefail
 
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/rdev"
+SHIELD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/shield"
+SHIELD_HOME="${SHIELD_HOME:-$HOME/.shield}"
 BIN_DIR="$HOME/.local/bin"
 
 RED='\033[0;31m'
@@ -16,19 +18,25 @@ warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 info() { echo -e "  ${BLUE}→${NC} $1"; }
 
 echo ""
-echo "rdev -- Uninstall"
-echo "================="
+echo "shield -- Uninstall"
+echo "==================="
 echo ""
 
-# ─── Remove symlinks ─────────────────────────────────────────────────────────
+# ─── Stop the watcher service ────────────────────────────────────────────────
 
-info "Removing script symlinks from $BIN_DIR"
-for cmd in rdev rstream rbuild rforward rstatus rclean; do
-  if [[ -L "$BIN_DIR/$cmd" ]]; then
-    rm "$BIN_DIR/$cmd"
-    ok "Removed $cmd"
-  fi
-done
+PLIST="$HOME/Library/LaunchAgents/com.shield.watch.plist"
+if [[ -f "$PLIST" ]]; then
+  launchctl bootout "gui/$(id -u)/com.shield.watch" 2>/dev/null || true
+  rm -f "$PLIST"
+  ok "Watcher service removed"
+fi
+
+# ─── Remove the command link ─────────────────────────────────────────────────
+
+if [[ -L "$BIN_DIR/shield" ]]; then
+  rm "$BIN_DIR/shield"
+  ok "Removed $BIN_DIR/shield"
+fi
 
 # ─── Remove config ───────────────────────────────────────────────────────────
 
@@ -47,9 +55,9 @@ if [[ "$(basename "$SHELL")" == "bash" ]]; then
   SHELL_RC="$HOME/.bashrc"
 fi
 
-if grep -q '# rdev PATH' "$SHELL_RC" 2>/dev/null; then
+if grep -q '# shield PATH' "$SHELL_RC" 2>/dev/null; then
   info "Removing PATH entry from $SHELL_RC"
-  sed -i '' '/# rdev PATH/d' "$SHELL_RC"
+  sed -i '' '/# shield PATH/d' "$SHELL_RC"
   sed -i '' "\|export PATH=\"$BIN_DIR:\\\$PATH\"|d" "$SHELL_RC"
   ok "PATH entry removed"
 fi
@@ -58,21 +66,18 @@ fi
 
 echo ""
 
-# Check for worktrees
-if [[ -f "$CONFIG_DIR/config" ]]; then
-  # Config already removed, check common location
-  :
+if ls "$SHIELD_HOME/streams" 2>/dev/null | grep -q .; then
+  warn "Registered streams still exist (their worktrees are untouched):"
+  for f in "$SHIELD_HOME"/streams/*; do
+    [[ -f "$f" ]] && warn "  $(basename "$f") → $(cat "$f")"
+  done
+  warn "Clean them first with 'shield clean <stream>' if they're done."
+fi
+if [[ -d "$SHIELD_HOME" ]]; then
+  warn "Runtime data kept at $SHIELD_HOME (attention queue, QA Chrome profile)."
+  warn "Remove manually if no longer needed: rm -rf $SHIELD_HOME"
 fi
 
-WORKTREE_DIRS=("$HOME/code/rhythms-worktrees" "$HOME/code/rhythms"-worktrees)
-for wt_dir in "${WORKTREE_DIRS[@]}"; do
-  if [[ -d "$wt_dir" ]]; then
-    warn "Worktree directory still exists: $wt_dir"
-    warn "Remove manually if no longer needed: rm -rf $wt_dir"
-  fi
-done
-
-
 echo ""
-echo -e "${GREEN}rdev uninstalled.${NC}"
+echo -e "${GREEN}shield uninstalled.${NC} (the checkout at $SHIELD_ROOT is untouched)"
 echo ""

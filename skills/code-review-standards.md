@@ -5,6 +5,8 @@ description: Team coding standards and review checklist
 
 ## Review Standards
 
+Apply the sections for the stacks the change touches; the repo's own `AGENTS.md` / `CLAUDE.md` conventions win where they differ.
+
 ### General
 - No unnecessary try/catch or begin/rescue blocks — use framework error handlers
 - No duplicate abstractions — check if a helper/component already exists before creating new ones
@@ -12,21 +14,21 @@ description: Team coding standards and review checklist
 - No obvious/narrative comments that restate the code
 - Verify methods, schema fields, and API signatures exist — don't assume
 
-### Rails (railsapi)
+### Rails
 - Follow Packwerk package boundaries
 - Use action_policy for authorization
 - Write RSpec tests
 - Run Rubocop and Brakeman checks
 - Follow existing model/controller patterns
 
-### React/Next.js (webui)
+### React / Next.js
 - Use existing shadcn/ui components from the design system
 - Follow Tanstack Query patterns for data fetching
 - Write Vitest unit tests
 - Run ESLint and Prettier
 - Use TypeScript strictly — no `any` types
 
-### Python (mlai)
+### Python
 - Use pydantic models for data validation
 - Follow existing agent/prompt patterns
 - Write pytest tests

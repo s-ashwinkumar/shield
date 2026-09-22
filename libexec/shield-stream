@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+# shield stream -- Start or resume a workstream for a ticket
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+
+usage() {
+  cat <<EOF
+Usage: shield [-C <project>] stream <ticket> [options]
+
+Start or resume a workstream for a ticket in the current project (the git repo
+you are in, or -C). Launches the coordinator agent for interactive planning.
+
+By default, creates an isolated worktree. Use --local to work directly
+on the main repo.
+
+Arguments:
+  ticket              Ticket ID (e.g. ENG-492, or a GitHub issue: 123 / #123)
+
+Options:
+  --local             Work on main repo instead of a worktree
+  --design            Full design process (brainstorming → spec → plan) for larger features
+  --god               Fully autonomous — no user gates, build+test+review+PR without intervention
+  --branch <name>     Git branch name (default: stream/<name>)
+  --base <branch>     Base branch (default: BASE_BRANCH from .shield/config, else origin's HEAD)
+  --review-loops <n>  Max code review iterations (default: $MAX_REVIEW_LOOPS)
+  --name-ok           Allow a stream name that doesn't look like a ticket
+  -r, --runner <cmd>  Agent CLI to drive the stream (default: claude, or SHIELD_RUNNER
+                      in the global config). Non-claude runners (codex, opencode, ...)
+                      are launched with a playbook-direct kickoff prompt; fleet
+                      monitoring/relay is best-effort for them (herdr tracks claude).
+  -h, --help          Show this help
+EOF
+  exit 0
+}
+
+# Parse args
+TICKET=""
+BRANCH_FLAG=""
+BASE_FLAG=""
+LOCAL=false
+DESIGN=false
+GOD=false
+RUNNER="$SHIELD_RUNNER"
+NAME_OK=false
+REVIEW_LOOPS="$MAX_REVIEW_LOOPS"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --local) LOCAL=true; shift ;;
+    --design) DESIGN=true; shift ;;
+    --god) GOD=true; shift ;;
+    --name-ok) NAME_OK=true; shift ;;
+    --branch) BRANCH_FLAG="$2"; shift 2 ;;
+    --base) BASE_FLAG="$2"; shift 2 ;;
+    --review-loops) REVIEW_LOOPS="$2"; shift 2 ;;
+    -r|--runner) RUNNER="$2"; shift 2 ;;
+    -*) echo "Unknown option: $1"; usage ;;
+    *) TICKET="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$TICKET" ]]; then
+  echo "Error: ticket ID required"
+  usage
+fi
+
+# Guard: stream names must look like tickets (ENG-123, or an issue number).
+# Words like "status", "list", "help" are almost always a mis-typed verb —
+# creating a whole stream from one is a catastrophic default. Force with --name-ok.
+if [[ "$TICKET" =~ ^#?[0-9]+$ ]]; then
+  TICKET="${TICKET#\#}"
+  NAME="issue-$TICKET"
+elif [[ "$TICKET" == *-* || "$NAME_OK" == "true" ]]; then
+  NAME="$TICKET"
+else
+  echo "Error: '$TICKET' doesn't look like a ticket ID (expected e.g. ENG-123 or 123)."
+  echo "If you really want a stream named '$TICKET', re-run with --name-ok."
+  exit 2
+fi
+
+shield_resolve_project
+MAX_REVIEW_LOOPS="$REVIEW_LOOPS"
+BASE="${BASE_FLAG:-$BASE_BRANCH}"
+BRANCH="${BRANCH_FLAG:-stream/$NAME}"
+
+# Set work directory based on mode
+if [[ "$LOCAL" == "true" ]]; then
+  WORK_DIR="$PROJECT_DIR"
+else
+  WORK_DIR="$WORKTREE_DIR/$NAME"
+fi
+
+shield_ensure_session
+shield_register_stream "$NAME" "$WORK_DIR"
+shield_git_exclude
+
+# --- Detect resume ---
+
+RESUMING=false
+STATE_FILE="$WORK_DIR/$SHIELD_STATE_REL/state.json"
+if [[ -f "$STATE_FILE" ]]; then
+  # In local mode, check if the state file is for THIS ticket
+  EXISTING_TICKET=$(jq -r '.ticket // ""' "$STATE_FILE" 2>/dev/null)
+  EXISTING_NAME=$(jq -r '.name // ""' "$STATE_FILE" 2>/dev/null)
+  if [[ "$EXISTING_TICKET" == "$TICKET" || "$EXISTING_NAME" == "$NAME" ]]; then
+    RESUMING=true
+    STAGE=$(shield_get_stage_from "$STATE_FILE")
+    BRANCH=$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$BRANCH")
+    echo "Resuming stream '$NAME' (stage: $STAGE, branch: $BRANCH)"
+  else
+    # Different ticket — clean up old state and start fresh
+    echo "Found state for '$EXISTING_NAME' ($EXISTING_TICKET), replacing with '$NAME' ($TICKET)"
+    [[ -n "$EXISTING_NAME" ]] && shield_unregister_stream "$EXISTING_NAME"
+    rm -f "$STATE_FILE"
+  fi
+fi
+
+# --- Setup (new streams only) ---
+
+if [[ "$RESUMING" == "false" ]]; then
+
+  if [[ "$LOCAL" == "true" ]]; then
+    # --- Local mode: branch on main repo ---
+
+    # Check for uncommitted changes
+    if ! git -C "$PROJECT_DIR" diff --quiet 2>/dev/null || ! git -C "$PROJECT_DIR" diff --cached --quiet 2>/dev/null; then
+      echo "Warning: main repo has uncommitted changes."
+      read -rp "Stash them and continue? [Y/n] " confirm
+      if [[ "$confirm" == [nN] ]]; then
+        echo "Aborted."
+        exit 1
+      fi
+      git -C "$PROJECT_DIR" stash push -m "shield: auto-stash before stream $NAME"
+    fi
+
+    # Create or checkout branch
+    if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+      # If branch is locked to a worktree, remove the worktree first
+      WT_PATH=$(git -C "$PROJECT_DIR" worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH" | grep "^worktree " | sed 's/^worktree //' || true)
+      if [[ -n "$WT_PATH" && "$WT_PATH" != "$PROJECT_DIR" ]]; then
+        echo "Branch '$BRANCH' is used by worktree at $WT_PATH. Removing worktree..."
+        git -C "$PROJECT_DIR" worktree remove "$WT_PATH" --force || {
+          echo "Warning: git worktree remove failed, force-removing directory..."
+          rm -rf "$WT_PATH"
+        }
+        git -C "$PROJECT_DIR" worktree prune
+      fi
+      echo "Branch '$BRANCH' exists, checking out..."
+      if ! git -C "$PROJECT_DIR" checkout "$BRANCH"; then
+        echo "Error: failed to checkout branch '$BRANCH'"
+        exit 1
+      fi
+    else
+      echo "Creating branch '$BRANCH' from '$BASE'..."
+      if ! git -C "$PROJECT_DIR" checkout -b "$BRANCH" "$BASE"; then
+        echo "Error: failed to create branch '$BRANCH' from '$BASE'"
+        exit 1
+      fi
+    fi
+
+  else
+    # --- Worktree mode ---
+
+    if [[ -d "$WORK_DIR" ]]; then
+      echo "Worktree '$NAME' already exists. Reusing."
+    else
+      mkdir -p "$WORKTREE_DIR"
+
+      if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$BRANCH" 2>/dev/null; then
+        echo "Branch '$BRANCH' exists, creating worktree from it..."
+        if ! git -C "$PROJECT_DIR" worktree add "$WORK_DIR" "$BRANCH"; then
+          echo "Error: failed to create worktree for branch '$BRANCH'"
+          exit 1
+        fi
+      else
+        echo "Creating worktree '$NAME' from '$BASE'..."
+        if ! git -C "$PROJECT_DIR" worktree add "$WORK_DIR" -b "$BRANCH" "$BASE"; then
+          echo "Error: failed to create worktree '$NAME' from '$BASE'"
+          exit 1
+        fi
+      fi
+    fi
+
+    # Untracked env files (COPY_FILES) aren't in the checkout — bring them over.
+    shield_copy_files "$WORK_DIR"
+
+    # Symlink docs/plans/ to main repo so plans survive worktree cleanup
+    # (only when the repo doesn't track docs/plans itself).
+    if [[ ! -e "$WORK_DIR/docs/plans" ]]; then
+      mkdir -p "$PROJECT_DIR/docs/plans" "$WORK_DIR/docs"
+      ln -sf "$PROJECT_DIR/docs/plans" "$WORK_DIR/docs/plans"
+      echo "Symlinked docs/plans/ to main repo"
+    fi
+
+    # Mirror an untracked mainline .claude/ into the worktree: link every item
+    # except agents/, which stays a real per-worktree dir (the repo's agents
+    # plus shield's). Skills are gap-filled user-wide by `shield sync-skills`.
+    WORK_CLAUDE="$WORK_DIR/.claude"
+    if [[ -d "$PROJECT_DIR/.claude" && ! -e "$WORK_CLAUDE" ]]; then
+      mkdir -p "$WORK_CLAUDE"
+      for item in "$PROJECT_DIR"/.claude/*; do
+        item_name="$(basename "$item")"
+        case "$item_name" in agents|worktrees|shield) continue ;; esac
+        ln -sf "$item" "$WORK_CLAUDE/$item_name"
+      done
+      mkdir -p "$WORK_CLAUDE/agents"
+      cp "$PROJECT_DIR"/.claude/agents/*.md "$WORK_CLAUDE/agents/" 2>/dev/null || true
+      echo "Mirrored mainline .claude/ into the worktree"
+    fi
+
+    # Pre-approve project .mcp.json servers for this stream. Worktree Claude
+    # sessions run non-interactively (the coordinator agent), so Claude can't
+    # answer the "approve these MCP servers?" prompt and instead auto-writes
+    # disabledMcpjsonServers for ALL of them -> the stream silently loses every
+    # project MCP. Set enableAllProjectMcpServers up front (matches mainline).
+    SL="$WORK_CLAUDE/settings.local.json"
+    if [[ -L "$SL" ]]; then cp -L "$SL" "$SL.deref" 2>/dev/null && mv "$SL.deref" "$SL"; fi  # edit a real file, not mainline's
+    SL_CUR='{}'; [[ -f "$SL" ]] && SL_CUR="$(cat "$SL" 2>/dev/null)"; [[ -n "$SL_CUR" ]] || SL_CUR='{}'
+    if echo "$SL_CUR" | jq '.enableAllProjectMcpServers = true | del(.disabledMcpjsonServers)' > "$SL.new" 2>/dev/null; then
+      mv "$SL.new" "$SL"
+    else
+      rm -f "$SL.new"; printf '{\n  "enableAllProjectMcpServers": true\n}\n' > "$SL"
+    fi
+    echo "Enabled project MCP servers for the stream (.claude/settings.local.json)"
+  fi
+
+  # --- Dependency setup is DEFERRED to the companion pane (see launch section)
+  # so the coordinator opens immediately; `shield deps` runs while you plan. ---
+  DEPS_DEFERRED=false
+  if [[ "$LOCAL" != "true" ]]; then
+    DEPS_DEFERRED=true
+  fi
+
+  # --- Initialize state ---
+
+  if [[ ! -f "$STATE_FILE" ]]; then
+    MODE="worktree"; [[ "$LOCAL" == "true" ]] && MODE="local"
+    shield_init_state_at "$WORK_DIR" "$NAME" "$TICKET" "$MODE" "$DESIGN" "$GOD"
+    echo "Initialized pipeline state"
+  fi
+
+  # --- Ticket context placeholder ---
+
+  TICKET_FILE="$WORK_DIR/$SHIELD_STATE_REL/$NAME.md"
+  if [[ ! -f "$TICKET_FILE" ]]; then
+    mkdir -p "$WORK_DIR/$SHIELD_STATE_REL"
+    {
+      echo "# $TICKET"
+      echo ""
+      echo "Ticket context will be fetched by the coordinator agent from the tracker ($TRACKER)."
+      echo ""
+      echo "If no tracker is reachable, describe the task to the agent directly."
+    } > "$TICKET_FILE"
+  fi
+
+  mkdir -p "$WORK_DIR/docs/plans"
+fi
+
+# --- Refresh agents, skills, playbook and project facts (every launch) ---
+
+shield_install_agents "$WORK_DIR"
+"$SCRIPT_DIR/shield-sync-skills" "$PROJECT_DIR" || echo "sync-skills failed (non-fatal)"
+shield_install_playbook "$WORK_DIR"
+shield_state_project_meta "$STATE_FILE" || true
+echo "Refreshed agents + workflow playbook"
+
+# --- Create Herdr tab; reuse on resume ---
+# Layout: coordinator in the LEFT pane (~70%), companion shell split off to the
+# RIGHT (~30%). The coordinator is launched via `pane run` in the tab's root
+# pane; Herdr tracks it through the global claude hook.
+# Ensure the project workspace exists (find-or-create), then make the stream tab in it.
+WS_ID="$(mux space-ensure --name "$WORKSPACE" --cwd "$PROJECT_DIR")"
+if [[ -z "$WS_ID" ]]; then
+  echo "Error: no Herdr workspace '$WORKSPACE'. Is the server running? (herdr status server)"
+  exit 1
+fi
+TAB_ID="$(mux tab-find --name "$NAME" --workspace "$WS_ID")"
+if [[ -z "$TAB_ID" ]]; then
+  TAB_ID="$(mux tab-new --name "$NAME" --cwd "$WORK_DIR" --workspace "$WS_ID")"
+fi
+if [[ -z "$TAB_ID" ]]; then
+  echo "Error: failed to create Herdr tab for '$NAME' in workspace '$WORKSPACE'."
+  exit 1
+fi
+
+# Permission mode: god mode gets full bypass, otherwise auto
+PERM_FLAG="--permission-mode auto"
+if [[ "$GOD" == "true" ]]; then
+  PERM_FLAG="--dangerously-skip-permissions"
+fi
+
+# Root pane of the tab = the LEFT/primary pane (will hold the coordinator).
+P0="$(mux pane-first --tab "$TAB_ID")"
+# Split the companion shell off to the RIGHT; ratio applies to the ORIGINAL pane,
+# so 0.7 keeps the coordinator at 70% on the left and the shell at 30% on the right.
+if [[ -n "$P0" ]]; then
+  mux pane-split --pane "$P0" --dir right --ratio 0.7 --cwd "$WORK_DIR" >/dev/null 2>&1 || true
+fi
+
+# Launch coordinator in the LEFT pane (fresh each run; it reads state.json to resume).
+# Tracked via the global claude hook; Herdr owns state display + notifications.
+# FOOTGUN GUARD: never type a launch command into a pane that holds a LIVE
+# agent — it lands as chat input in the running session and wrecks it.
+LIVE_PANE="$(mux agent-cwd --cwd "$WORK_DIR" 2>/dev/null || true)"
+if [[ -n "$LIVE_PANE" ]]; then
+  echo "Stream '$NAME' already has a LIVE agent (pane $LIVE_PANE)."
+  echo "Not launching a second one. To talk to it, type in its pane (or: shield send $NAME <msg>)."
+  echo "To force a fresh session: close that tab first (herdr tab close), then re-run."
+  exit 0
+fi
+
+KICKOFF_CLAUDE="Start. Read state, fetch ticket $TICKET from the tracker, present summary, and begin planning."
+if [[ "$RUNNER" == "claude" ]]; then
+  COORD_CMD="claude --agent coordinator $PERM_FLAG --remote-control shield:$NAME -n shield:$NAME $(printf %q "$KICKOFF_CLAUDE")"
+else
+  # Non-claude runner: no coordinator bindings — kick off straight from the
+  # tool-neutral playbook (the pilot pattern). The runner value is used as-is
+  # as the command; the kickoff prompt is passed as one argument.
+  KICKOFF="Read $SHIELD_STATE_REL/playbook/workflow.md and follow that workflow for ticket $TICKET, starting at stage 0. Keep the plan's Progress section updated at every stage transition."
+  [[ "$GOD" == "true" ]] && KICKOFF="$KICKOFF Autonomy: mode autonomous (see workflow.md) — no optional pauses."
+  COORD_CMD="$RUNNER $(printf %q "$KICKOFF")"
+fi
+if [[ -n "$P0" ]]; then
+  mux pane-run --pane "$P0" --text "$COORD_CMD"
+elif [[ "$RUNNER" == "claude" ]]; then
+  # Fallback: no root pane id — start as a tracked agent (Herdr default layout).
+  mux agent-start --name "$NAME" --cwd "$WORK_DIR" --tab "$TAB_ID" -- \
+    claude --agent coordinator $PERM_FLAG --remote-control "shield:$NAME" -n "shield:$NAME" "$KICKOFF_CLAUDE"
+else
+  echo "No pane available to launch runner '$RUNNER' — open the tab and run:"
+  echo "  $COORD_CMD"
+fi
+
+# --- Record the stream's herdr address in state (record the endpoint at spawn;
+# never rediscover it at use). Refreshed on every launch/resume.
+if [[ -n "$P0" && -f "$STATE_FILE" ]]; then
+  jq --arg t "$TAB_ID" --arg p "$P0" --arg r "$RUNNER" '.herdr = {tab: $t, pane: $p} | .runner = $r' "$STATE_FILE" > "$STATE_FILE.tmp" \
+    && mv "$STATE_FILE.tmp" "$STATE_FILE"
+fi
+
+# --- Deferred dependency setup: runs in the COMPANION pane so planning starts
+# immediately. `shield deps` writes .claude/shield/deps.ready when done; the
+# coordinator waits on that marker before running local tests.
+if [[ "${DEPS_DEFERRED:-false}" == "true" ]]; then
+  SHELL_PANE=""
+  [[ -n "$P0" ]] && SHELL_PANE="$(mux pane-other --tab "$TAB_ID" --pane "$P0" 2>/dev/null || true)"
+  if [[ -n "$SHELL_PANE" ]]; then
+    mux pane-run --pane "$SHELL_PANE" --text "$SHIELD_LIBEXEC/shield-deps $(printf %q "$WORK_DIR")"
+    echo "Dependency setup running in the companion pane (shield deps — watch for ✅ DONE)"
+  else
+    echo "No companion pane found — running dependency setup inline..."
+    "$SCRIPT_DIR/shield-deps" "$WORK_DIR" || true
+  fi
+fi
+
+# Land the user in the new stream tab (coordinator pane is focused).
+mux tab-focus --tab "$TAB_ID" >/dev/null 2>&1 || true
+echo "  Herdr tab: $TAB_ID"
+
+echo ""
+if [[ "$RESUMING" == "true" ]]; then
+  echo "Stream '$NAME' resumed (stage: $STAGE, branch: $BRANCH)"
+else
+  MODE="worktree"
+  [[ "$LOCAL" == "true" ]] && MODE="local"
+  [[ "$GOD" == "true" ]] && MODE="$MODE+god"
+  echo "Stream '$NAME' started (mode: $MODE, branch: $BRANCH)"
+fi
+echo "  Project: $PROJECT_DIR"
+echo "  Directory: $WORK_DIR"
+echo "  Agent: coordinator"
+echo ""
+
+if [[ "$RESUMING" == "false" ]]; then
+  echo "Plan with the agent, then run: shield build $NAME"
+fi

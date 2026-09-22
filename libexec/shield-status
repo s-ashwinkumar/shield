@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# shield status -- Coulson's fleet status: what needs the captain, at a glance.
+#
+# Default: watcher health + the attention queue (items needing a human),
+#          grouped by urgency with ages, plus acked items awaiting the captain.
+#          This is Coulson's primary read — run it, relay it, don't hand-roll jq.
+# --all:   ALSO show every workstream + pipeline stage (grouped by project),
+#          each project's Herdr tabs and SERVICES health (.shield/config), and
+#          flag any "lost signal" — a stream whose state.json raised an
+#          attention flag that never surfaced as a queue item.
+#
+# Read-only. Never dispatches, never mutates the queue. Safe to run anytime.
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+shield_load_config
+
+ATT="${SHIELD_WATCH_HOME:-${SHIELD_HOME:-$HOME/.shield}/attention}"
+ALL=false
+for arg in "$@"; do
+  case "$arg" in
+    -a|--all) ALL=true ;;
+    -h|--help)
+      cat <<EOF
+Usage: shield status [--all]
+
+Fleet status for the captain (read-only).
+  (default)   watcher health + attention queue: what needs you, by urgency.
+  --all, -a   also list every workstream + stage (by project), Herdr tabs, and service health,
+              and flag lost signals (state raised a flag shield watch never surfaced).
+EOF
+      exit 0 ;;
+  esac
+done
+
+NOW=$(date +%s)
+
+# epoch -> compact age like "45m" / "12h" / "3d"
+age() {
+  local secs=$(( NOW - $1 )); (( secs < 0 )) && secs=0
+  if   (( secs < 3600 ));   then echo "$(( secs / 60 ))m"
+  elif (( secs < 172800 )); then echo "$(( secs / 3600 ))h"
+  else echo "$(( secs / 86400 ))d"; fi
+}
+
+# urgency rank for a queue item type: lower = more urgent
+rank() {
+  case "$1" in
+    blocked|stuck|died)              echo 0 ;;
+    *_escalation)                    echo 1 ;;
+    plan_gate)                       echo 2 ;;
+    done_followups)                  echo 3 ;;
+    *)                               echo 4 ;;
+  esac
+}
+
+# --- watcher health + counts (delegates to shield watch's own status line) ---
+"$SCRIPT_DIR/shield-watch" status 2>/dev/null || echo "shield watch: (status unavailable)"
+echo
+
+# pane <stream> — herdr pane (or tab) id from the stream's state.json, or "-"
+pane() {
+  jq -r '.herdr.pane // .herdr.tab // "-"' \
+    "$(shield_stream_dir "$1")/$SHIELD_STATE_REL/state.json" 2>/dev/null || echo "-"
+}
+
+# --- collect queue items into: "rank<TAB>created<TAB>Q<TAB>stream<TAB>type<TAB>summary" ---
+# Q = N (new/pending) or A (acked). Deterministic — no summarizing, just the stored fields.
+collect() {  # $1 = dir, $2 = queue marker
+  local f
+  for f in "$1"/*.json; do
+    [[ -f "$f" ]] || continue
+    jq -r --arg q "$2" '[($q), .type, (.created_at|tostring), .stream, .summary] | @tsv' "$f" 2>/dev/null \
+      | while IFS=$'\t' read -r q type created stream summary; do
+          printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(rank "$type")" "$created" "$q" "$stream" "$type" "$summary"
+        done
+  done
+}
+
+ROWS="$( { collect "$ATT/pending" N; collect "$ATT/acked" A; } | sort -t$'\t' -k1,1n -k2,2n )"
+
+if [[ -z "$ROWS" ]]; then
+  echo "nothing stuck — queue empty."
+else
+  # Deterministic table: what's stuck, where (pane), and how to jump.
+  printf '%-1s %-24s %-20s %5s %-9s %s\n' "" "STREAM" "STUCK ON" "AGE" "PANE" "REASON"
+  printf '%-1s %-24s %-20s %5s %-9s %s\n' "" "------" "--------" "-----" "----" "------"
+  while IFS=$'\t' read -r _ created q stream type summary; do
+    [[ -z "$stream" ]] && continue
+    mark="•"; [[ "$q" == "A" ]] && mark="·"   # • = new/pending, · = already acked
+    reason="${summary% (*}"                     # drop trailing " (TICKET)" noise
+    (( ${#reason} > 60 )) && reason="${reason:0:57}..."
+    printf '%-1s %-24s %-20s %5s %-9s %s\n' "$mark" "$stream" "$type" "$(age "$created")" "$(pane "$stream")" "$reason"
+  done <<< "$ROWS"
+  echo
+  echo "•=new  ·=acked   ·jump: shield focus <stream>  (or  !shield focus <stream>  in this session)"
+fi
+
+$ALL || exit 0
+
+# ==================== --all: full detail ====================
+
+# One section per project that has registered streams (stream registry order).
+PROJECTS=""
+while IFS= read -r name; do
+  [[ -z "$name" ]] && continue
+  root="$(shield_project_root "$(shield_stream_dir "$name")" 2>/dev/null)" || continue
+  case $'\n'"$PROJECTS"$'\n' in *$'\n'"$root"$'\n'*) ;; *) PROJECTS="${PROJECTS:+$PROJECTS$'\n'}$root" ;; esac
+done < <(shield_stream_names)
+
+if [[ -z "$PROJECTS" ]]; then
+  echo
+  echo "  No active workstreams."
+  exit 0
+fi
+
+while IFS= read -r project; do
+  shield_use_project "$project"
+  echo
+  echo "════ $WORKSPACE ($PROJECT_DIR) ════"
+  echo
+  while IFS= read -r wt_name; do
+    [[ -z "$wt_name" ]] && continue
+    wt_path="$(shield_stream_dir "$wt_name")"
+    [[ "$(shield_project_root "$wt_path" 2>/dev/null)" == "$PROJECT_DIR" ]] || continue
+    wt_branch=$(git -C "$wt_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+    last_commit=$(git -C "$wt_path" log -1 --format="%cr" 2>/dev/null || echo "unknown")
+    state_file="$wt_path/$SHIELD_STATE_REL/state.json"
+    if [[ -f "$state_file" ]]; then
+      stage=$(jq -r '.stage // "unknown"' "$state_file")
+      review_loops=$(jq -r '.review_loops_done // 0' "$state_file")
+      attn=$(jq -r '.attention.type // "-"' "$state_file")
+      case "$stage" in
+        plan)        stage_icon="📋 plan" ;;
+        build)       stage_icon="🔨 build" ;;
+        ux_review)   stage_icon="👁  ux review" ;;
+        code_review) stage_icon="🔍 review ($review_loops)" ;;
+        qa)          stage_icon="🧪 qa" ;;
+        pr)          stage_icon="📤 pr" ;;
+        done)        stage_icon="✅ done" ;;
+        *)           stage_icon="❓ $stage" ;;
+      esac
+      flags=""
+      [[ "$attn" != "-" ]] && flags+=" [attn:$attn]"
+      printf "  %-24s %-18s %-30s %s%s\n" "$wt_name" "$stage_icon" "$wt_branch" "(last: $last_commit)" "$flags"
+      # lost signal: state flags attention but no queue item exists
+      if [[ "$attn" != "-" ]] \
+         && ! ls "$ATT/pending/${wt_name}--"*.json >/dev/null 2>&1 \
+         && ! ls "$ATT/acked/${wt_name}--"*.json   >/dev/null 2>&1; then
+        printf '  ⚠ LOST SIGNAL: %s raised [%s] but no queue item (the watcher has not surfaced it)\n' "$wt_name" "$attn"
+      fi
+    else
+      printf "  %-24s %-18s %-30s %s\n" "$wt_name" "no state" "$wt_branch" "(last: $last_commit)"
+    fi
+  done < <(shield_stream_names)
+
+  echo
+  echo "  Herdr tabs:"
+  WS_ID="$(mux space-find --name "$WORKSPACE" 2>/dev/null)"
+  if [[ -n "$WS_ID" ]]; then
+    tabs="$(mux stream-list --workspace "$WS_ID" 2>/dev/null)"
+    [[ -n "$tabs" ]] && echo "$tabs" || echo "    (no stream tabs)"
+  else
+    echo "    workspace '$WORKSPACE' not found (is the Herdr server running?)"
+  fi
+
+  if (( ${#SERVICES[@]} > 0 )); then
+    echo
+    echo "  Services:"
+    for pair in "${SERVICES[@]}"; do
+      svc=${pair%%:*}; port=${pair##*:}
+      if curl -sf -o /dev/null --connect-timeout 1 "http://localhost:$port" 2>/dev/null; then
+        printf "    %-12s :%s  ✓ up\n" "$svc" "$port"
+      else
+        printf "    %-12s :%s  ✗ down\n" "$svc" "$port"
+      fi
+    done
+  fi
+done <<< "$PROJECTS"

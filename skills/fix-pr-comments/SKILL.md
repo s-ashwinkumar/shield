@@ -29,7 +29,7 @@ Then use the GitHub MCP to fetch:
 
 **Be conservative.** This code has already been built, tested, and reviewed. Any change you make now risks introducing regressions.
 
-Apply the `receiving-code-review` discipline (available in the rhythms repo's `.agents/skills/`): verify every comment against the actual code before acting, no performative agreement, push back with reasons when a reviewer is wrong.
+Apply the `receiving-code-review` discipline (if the project provides a `receiving-code-review` skill, use it): verify every comment against the actual code before acting, no performative agreement, push back with reasons when a reviewer is wrong.
 
 First, separate comments by source:
 
@@ -63,9 +63,9 @@ First, separate comments by source:
 For comments categorized as "Fix":
 - **Read the surrounding code first** — understand why it was written that way
 - Make the **minimal** change — do not refactor, do not "improve" nearby code
-- **Run tests after every fix** (use devcontainer if available):
+- **Run tests after every fix** — the repo's test command for the touched service/package (see its `AGENTS.md` / CI config); if `.shield/config` sets `CONTAINER`, run it inside that container at the worktree's path:
   ```bash
-  docker exec fullstack-fullstack-1 bash -lc "cd /workspaces/rhythms/<service> && <test command>"
+  docker exec <CONTAINER> bash -lc "cd <worktree path in container>/<service> && <test command>"
   ```
 - If tests fail after your fix, **revert it** — the comment was wrong or your fix introduced a regression
 - Commit fixes separately with a clear message

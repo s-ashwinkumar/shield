@@ -12,7 +12,7 @@ Arguments: $ARGUMENTS
 
 Parse the ticket ID from arguments. If `--design` is present, enable design mode.
 
-Create or read `.claude/rdev/state.json`:
+Create or read `.claude/shield/state.json`:
 ```json
 {
   "stage": "plan",
@@ -28,20 +28,20 @@ If state already exists for this ticket, read it and resume from the current sta
 
 ### Step 2: Fetch Ticket
 
-Try to fetch the ticket from Linear using MCP `get_issue` with the ticket ID. Save details to `.claude/rdev/<ticket-id>.md`.
+Fetch the ticket from your tracker: Linear via MCP (`get_issue` + `list_comments` — `get_issue` omits comments), GitHub issues via `gh issue view <n> --comments`. Save details to `.claude/shield/<ticket-id>.md`.
 
-If Linear MCP is not available, ask the user to describe the task.
+If no tracker is available, ask the user to describe the task.
 
 ### Step 3: Set Up Branch
 
-Check if a branch exists for this ticket. If Linear provided a `gitBranchName`, use that. Otherwise check for existing branches:
+Check if a branch exists for this ticket. If the tracker provided a branch name (Linear: `gitBranchName`), use that. Otherwise check for existing branches:
 ```bash
 git branch -a | grep -i "<ticket-id-lowercase>"
 ```
 
-If no branch exists, create one from main:
+If no branch exists, create one from the base branch:
 ```bash
-git checkout -b <branch-name> main
+git checkout -b <branch-name> <base_branch>
 ```
 
 If a branch exists, check it out.
@@ -83,4 +83,4 @@ Tell the user: "Plan ready. Say `/build` to start building, or `/build --god` fo
 ## Rules
 - Always fetch the ticket first — don't start blind
 - Always use superpowers brainstorming — no skipping planning
-- Save plans to `docs/plans/` (not `.claude/rdev/`)
+- Save plans to `docs/plans/` (not `.claude/shield/`)

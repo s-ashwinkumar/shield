@@ -12,7 +12,7 @@ Arguments: $ARGUMENTS
 
 ### Review-Fix Loop
 
-Read max loops from `.claude/rdev/state.json` (default: 3).
+Read max loops from `.claude/shield/state.json` (default: 3).
 
 For each iteration:
 
@@ -29,7 +29,7 @@ For each iteration:
 
    For Codex via `codex-companion.mjs`, use `adversarial-review` (not plain `review`) — it targets material risk (auth, data loss, races, migration hazards) and skips style/naming nits. Append the ticket scope as positional focus text if available: `adversarial-review --wait --base main "Ticket scope: <1-2 sentence summary>. Only flag issues caused by this change."`
 
-2. **Save review** to `.claude/rdev/review-<ticket>-{n}.md`
+2. **Save review** to `.claude/shield/review-<ticket>-{n}.md`
 
 3. **If Critical or Important issues**: pass findings directly to the **builder** — "Fix all Critical and Important issues from this review: <paste findings>". No triage. Trust the review.
 
