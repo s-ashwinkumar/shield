@@ -47,8 +47,7 @@ shield build|forward|resume|clean   stream lifecycle
 ```
 
 Every command also exists under its original `r*` name (`rstream`, `rcaptain`, `rfleet`,
-`rstatus`, `rusage`, ...). The `rt*` prefix is the previous tmux generation, kept as a
-working fallback (`RDEV_COORDINATOR=coordinator-v1` pins its old brain).
+`rstatus`, `rusage`, ...).
 
 ## Architecture, briefly
 

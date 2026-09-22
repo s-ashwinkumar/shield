@@ -35,7 +35,7 @@ S.H.I.E.L.D. — Strategic Herding, Intervention, Escalation & LLM Dispatch
   shield build|forward|resume|clean|switch   stream lifecycle
   shield mux <verb>        substrate adapter (herdr)
 
-Legacy r*-prefixed commands still work; rt* is the retired tmux generation.
+Legacy r*-prefixed commands still work.
 EOF
     ;;
 esac

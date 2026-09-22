@@ -5,7 +5,7 @@
 # diffs against a cache, and emits attention-item JSON files that the captain
 # agent consumes. Also: batched wake-up injection into the coulson pane,
 # dead-man fallback to terminal-notifier, heartbeat, auto-cancel of stale
-# items. Replaces rwatch for the r* (new) system.
+# items.
 #
 # Modes / env:
 #   RFLEET_INTERVAL=15       scan every N seconds
@@ -78,7 +78,7 @@ else
   SCAN_DIR="$WORKTREE_DIR"
 fi
 
-# Patterns meaning the agent is waiting on a human (ported from rwatch)
+# Patterns meaning the agent is waiting on a human
 STUCK_PATTERNS=(
   "Allow once" "Allow always" "Do you want to proceed"
   "Press Enter to continue" "What should Claude do" "Interrupted"
@@ -196,20 +196,8 @@ scan_stream() {
     local agent_pane
     agent_pane=$("$SCRIPT_DIR/rdev-mux" agent-cwd --cwd "$wt" 2>/dev/null || true)
     if [[ -z "$agent_pane" ]]; then
-      # Not a herdr agent. Legacy rtstream (tmux) streams are alive but
-      # invisible to herdr — check tmux before declaring death; legacy
-      # streams get state-level routing only (rwatch covers their prompts).
-      local tmux_pane
-      tmux_pane=$(tmux list-panes -a -F "#{pane_current_path} #{pane_id}" 2>/dev/null \
-                  | awk -v p="$wt" '$1==p {print $2; exit}')
-      if [[ -n "$tmux_pane" ]]; then
-        # Legacy tmux stream, alive — read-only stuck check via capture-pane.
-        local ltail
-        ltail=$(tmux capture-pane -p -t "$tmux_pane" 2>/dev/null | tail -15)
-        if [[ -n "$ltail" ]] && echo "$ltail" | grep -qE "$STUCK_RE"; then
-          emit "$stream" "stuck" "Agent waiting on a prompt (legacy tmux, stage: $cur_stage)" "$state"
-        fi
-      else
+      # Not a live herdr agent.
+      {
         # Only flag death for streams this watcher has seen ALIVE (marker),
         # or whose state changed recently — never for fossil worktrees. And
         # DEBOUNCE: agents blink out of the registry during turn transitions,
@@ -223,7 +211,7 @@ scan_stream() {
             emit "$stream" "died" "Stream agent gone mid-pipeline (stage: $cur_stage)" "$state"
           fi
         fi
-      fi
+      }
     else
       touch "$ATT/.cache/${stream}.alive"
       rm -f "$ATT/.cache/${stream}.misses"

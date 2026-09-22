@@ -24,7 +24,6 @@ Options:
                       different runner here IS the switch mechanism (see rswitch).
   --local             Work on main repo (default if no worktree exists)
   --worktree          Work in a worktree
-  --session <name>    tmux session (default: current session)
   --god               Run fully autonomous after resuming
   -h, --help          Show this help
 EOF
@@ -34,7 +33,6 @@ EOF
 NAME=""
 FROM_STAGE="build"
 PR_NUMBER=""
-SESSION_FLAG=""
 GOD=false
 RUNNER_FLAG=
 MODE_FLAG=""
@@ -46,7 +44,6 @@ while [[ $# -gt 0 ]]; do
     --pr) PR_NUMBER="$2"; shift 2 ;;
     --local) MODE_FLAG="local"; shift ;;
     --worktree) MODE_FLAG="worktree"; shift ;;
-    --session) SESSION_FLAG="$2"; shift 2 ;;
     --god) GOD=true; shift ;;
     -r|--runner) RUNNER_FLAG="$2"; shift 2 ;;
     -*) echo "Unknown option: $1"; usage ;;
@@ -65,7 +62,6 @@ case "$FROM_STAGE" in
   *) echo "Error: invalid stage '$FROM_STAGE'. Must be: plan, build, code_review, pr_comments"; exit 1 ;;
 esac
 
-rdev_resolve_session
 rdev_ensure_session
 
 RDEV_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -271,13 +267,6 @@ fi
 if [[ -z "$TAB_ID" ]]; then
   echo "Error: failed to create Herdr tab for '$NAME' (herdr server running?)"
   exit 1
-fi
-
-# Start rwatch if not already running
-if ! pgrep -f "rwatch" >/dev/null 2>&1; then
-  nohup "$SCRIPT_DIR/rwatch" 30 >/dev/null 2>&1 &
-  disown
-  echo "Started rwatch (background pane monitor)"
 fi
 
 # Permission mode

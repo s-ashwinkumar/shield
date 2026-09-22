@@ -85,7 +85,7 @@ else
 fi
 
 check_cmd git true git || true
-check_cmd tmux true tmux || true
+check_cmd herdr true herdr "multiplexer the r* commands drive (then: herdr integration install claude)" || true
 check_cmd jq true jq || true
 check_cmd terminal-notifier true terminal-notifier "required for build/review/PR notifications" || true
 
@@ -196,19 +196,6 @@ else
   ok "$BIN_DIR already in PATH"
 fi
 
-# ─── tmux Config ─────────────────────────────────────────────────────────────
-
-TMUX_CONF="$HOME/.tmux.conf"
-
-if [[ -f "$TMUX_CONF" ]] && grep -q '# --- rdev begin ---' "$TMUX_CONF"; then
-  ok "tmux config already present"
-else
-  info "Appending tmux config to $TMUX_CONF"
-  echo '' >> "$TMUX_CONF"
-  cat "$RDEV_ROOT/config/tmux.conf" >> "$TMUX_CONF"
-  ok "tmux config added"
-fi
-
 # ─── Create Worktree Directory ───────────────────────────────────────────────
 
 if [[ ! -d "$WORKTREE_DIR" ]]; then
@@ -244,15 +231,14 @@ echo -e "${GREEN}rdev installed successfully!${NC}"
 echo "════════════════════════════════════════"
 echo ""
 echo "  Config:     $CONFIG_DIR/config"
-echo "  Scripts:    $BIN_DIR/{rdev,rstream,rbuild,rpromote,runpromote,rforward,rresume,rstatus,rclean}"
+echo "  Scripts:    $BIN_DIR/{rdev,rstream,rbuild,rforward,rresume,rstatus,rclean}"
 echo "  Agents:     $RDEV_ROOT/agents/{coordinator,builder,reviewer}.md"
 echo "  Worktrees:  $WORKTREE_DIR"
 echo ""
 echo "Workflow:"
-echo "  rdev                          # Start tmux session + services"
+echo "  rdev                          # Start Herdr workspace + services"
 echo "  rstream USENG-492             # Create workstream, plan with agent"
 echo "  rbuild USENG-492              # Approve plan → autonomous build"
-echo "  rpromote USENG-492            # Test on running services"
 echo "  rforward USENG-492            # Satisfied → code review loop"
 echo "  rresume USENG-492             # Resume completed stream for more work"
 echo "  rstatus                       # See what's running"

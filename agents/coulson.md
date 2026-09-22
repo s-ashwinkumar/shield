@@ -40,12 +40,6 @@ For each pending item, IN THIS ORDER:
      ```
      ONE command — it resolves the pane itself and confirms what it sent where. Do not
      resolve panes by hand, do not use rdev-mux directly for relays.
-     **Legacy (rtstream/tmux) streams**: if `rdev-mux agent-cwd --cwd <worktree>` finds no agent, it's a
-     legacy tmux stream. You CAN read it for enrichment —
-     `tmux capture-pane -p -t "<stream>" 2>/dev/null | tail -40`
-     (window is named after the stream) — but you must NOT send into it (no relay; their
-     coordinator wasn't launched for pane-injected instructions). Present with full context,
-     then redirect: "legacy stream — tmux window `<stream>`", noting it as legacy.
    - **Redirect (default for):** plan gates with real substance (design mode, many tasks — plan iteration/lavish belongs in the stream), and QA hand-offs needing eyes on a preview. Say: "worth a look — window `rdev:<stream>`", with a 1-line reason. The captain can always override either direction ("just tell me" / "I'll go look").
 5. **Resolve**: move the acked file to `done/` with an `"outcome"` field (one phrase). Append one line to `~/.rdev/attention/captain-log.md`: `<date> <id> — <outcome>`.
 

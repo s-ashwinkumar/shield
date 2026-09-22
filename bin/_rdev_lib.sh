@@ -32,8 +32,7 @@ rdev_load_config() {
   fi
 
   WORKTREE_DIR="${WORKTREE_DIR:-${RHYTHMS_DIR}/.claude/worktrees}"
-  TMUX_SESSION="${TMUX_SESSION:-rdev}"
-  # Herdr workspace that holds all stream tabs (analog of the tmux session).
+  # Herdr workspace that holds all stream tabs.
   RDEV_WORKSPACE="${RDEV_WORKSPACE:-rhythms}"
   NOTIFY="${NOTIFY:-true}"
   DEVCONTAINER="${DEVCONTAINER:-fullstack}"
@@ -45,18 +44,6 @@ rdev_load_config() {
 
 # --- Session ---
 
-# Resolve tmux session: --session flag > current session > config default
-# Call after parsing args that set SESSION_FLAG
-rdev_resolve_session() {
-  if [[ -n "${SESSION_FLAG:-}" ]]; then
-    TMUX_SESSION="$SESSION_FLAG"
-  elif [[ -n "${TMUX:-}" ]]; then
-    # Inside tmux -- use current session
-    TMUX_SESSION="$(tmux display-message -p '#S')"
-  fi
-  # Otherwise TMUX_SESSION stays as config default (rdev)
-}
-
 rdev_ensure_session() {
   # Under Herdr, the persistent server IS the session. Ensure it's up.
   # (Backend is abstracted by rdev-mux; herdr's server auto-starts on `herdr`.)
@@ -64,13 +51,6 @@ rdev_ensure_session() {
     echo "Herdr server not running. Start it with: herdr" >&2
     return 1
   fi
-}
-
-# Call at the end of a script to attach if we created a new session.
-# Attaching to Herdr is interactive (`herdr`); left to the caller's shell.
-# Kept as a no-op for API compatibility with existing callers.
-rdev_maybe_attach() {
-  :
 }
 
 # --- Herdr stream helpers ---
@@ -223,27 +203,6 @@ rdev_mlai_setup() {  # rdev_mlai_setup <host_worktree_dir>
   here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   docker exec -i "$(rdev_container)" bash -lc "cd '$cpath/mlai' && exec mise x -- bash -s" \
     < "$here/_rdev_mlai_setup.sh"
-}
-
-# --- Live server (promote) helpers — agent-friendly, no pane, no user ---
-
-# (Re)start the live app in-container, pointed at a container WORKSPACE_ROOT.
-# Stops the current dev (pkill -f hivemind), then starts `dev` backgrounded so it
-# survives the docker-exec session; logs to <workspace>/dev.log. Documented flow:
-# start with `dev`/`devd`, watch `tail -f dev.log`, stop with `pkill -f hivemind`.
-rdev_serve() {  # rdev_serve <container-workspace-path>
-  local c; c="$(rdev_container)"
-  # 1. Stop the current server; WAIT for the hivemind procs (port holders) to
-  #    actually exit before restarting, else the new dev hits ports-in-use.
-  docker exec "$c" bash -lc \
-    'pkill -f hivemind 2>/dev/null || true; for i in $(seq 1 20); do pgrep -f hivemind >/dev/null || break; sleep 0.5; done'
-  # 2. Start DETACHED (docker exec -d): a plain `&` background job is reaped when
-  #    the exec session ends, so nohup/disown are not enough — -d is.
-  # 3. Select the code with WORKSPACE_ROOT, NOT cwd: dev.Procfile runs
-  #    `mise x -C $WORKSPACE_ROOT/<svc>`, and dev's Procfile path is fixed to
-  #    mainline, so cd does nothing — the env var is what repoints the app.
-  docker exec -d "$c" bash -lc "cd '$1' && WORKSPACE_ROOT='$1' exec dev > '$1/dev.log' 2>&1"
-  echo "  live server → WORKSPACE_ROOT=$1 (detached; watch: docker exec $c tail -f $1/dev.log)"
 }
 
 # --- Notifications ---

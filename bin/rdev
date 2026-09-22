@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rdev -- Create/focus the project's Herdr workspace (holds all stream tabs).
-# Analog of the old tmux session bootstrap: one workspace per project; each
+# One workspace per project; each
 # `rstream <ticket>` then opens a tab (coordinator + shell panes) inside it.
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -26,7 +26,3 @@ fi
 herdr workspace focus "$WS_ID" >/dev/null 2>&1 || true
 echo "Herdr workspace '$WS_NAME' ready ($WS_ID)."
 echo "Open streams inside it:  rstream <ticket>"
-
-# The live app is NOT auto-started (avoids disrupting a server that's already up).
-# Start main in the container with `devd`, or point the live server at a worktree
-# with `rpromote <ticket>` (which restarts dev via docker exec, backgrounded).

@@ -9,26 +9,22 @@ usage() {
   cat <<EOF
 Usage: rforward <name>
 
-Advance the pipeline from UX review to code review. Unpromotes the branch
-and tells the coordinator to start the review loop.
+Advance the pipeline from UX review to code review. Tells the coordinator to start the review loop.
 
 Arguments:
   name    Stream name (ticket ID)
 
 Options:
-  --session <name>    tmux session (default: current session)
   -h, --help          Show this help
 EOF
   exit 0
 }
 
 NAME=""
-SESSION_FLAG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage ;;
-    --session) SESSION_FLAG="$2"; shift 2 ;;
     -*) echo "Unknown option: $1"; usage ;;
     *) NAME="$1"; shift ;;
   esac
@@ -39,7 +35,6 @@ if [[ -z "$NAME" ]]; then
   usage
 fi
 
-rdev_resolve_session
 WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
 
 # Read state — rforward is flexible, works from any pre-done stage
@@ -48,13 +43,6 @@ STAGE=$(echo "$STATE" | jq -r '.stage // "unknown"')
 if [[ "$STAGE" == "done" ]]; then
   echo "Stream '$NAME' is already done."
   exit 0
-fi
-
-# Unpromote if currently promoted
-PROMOTED=$(echo "$STATE" | jq -r '.promoted // "false"')
-if [[ "$PROMOTED" == "true" ]]; then
-  echo "Unpromoting branch from main repo..."
-  "$SCRIPT_DIR/runpromote" "$NAME"
 fi
 
 # Update state

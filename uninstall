@@ -23,7 +23,7 @@ echo ""
 # ─── Remove symlinks ─────────────────────────────────────────────────────────
 
 info "Removing script symlinks from $BIN_DIR"
-for cmd in rdev rstream rbuild rpromote runpromote rforward rstatus rclean; do
+for cmd in rdev rstream rbuild rforward rstatus rclean; do
   if [[ -L "$BIN_DIR/$cmd" ]]; then
     rm "$BIN_DIR/$cmd"
     ok "Removed $cmd"
@@ -38,17 +38,6 @@ if [[ -d "$CONFIG_DIR" ]]; then
   ok "Config removed"
 else
   ok "Config directory not found (already clean)"
-fi
-
-# ─── Remove tmux config additions ────────────────────────────────────────────
-
-TMUX_CONF="$HOME/.tmux.conf"
-if [[ -f "$TMUX_CONF" ]] && grep -q '# --- rdev begin ---' "$TMUX_CONF"; then
-  info "Removing tmux config additions from $TMUX_CONF"
-  sed -i '' '/# --- rdev begin ---/,/# --- rdev end ---/d' "$TMUX_CONF"
-  ok "tmux config cleaned"
-else
-  ok "No tmux config to remove"
 fi
 
 # ─── Remove PATH entry ───────────────────────────────────────────────────────

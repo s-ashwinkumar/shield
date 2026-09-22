@@ -23,7 +23,6 @@ Options:
   --design            Full design process (brainstorming → spec → plan) for larger features
   --god               Fully autonomous — no user gates, build+test+review+PR without intervention
   --branch <name>     Git branch name (default: stream/<ticket>)
-  --session <name>    tmux session to use (default: current session)
   --base <branch>     Base branch (default: main)
   --review-loops <n>  Max code review iterations (default: $MAX_REVIEW_LOOPS)
   -r, --runner <cmd>  Agent CLI to drive the stream (default: claude, or RDEV_RUNNER
@@ -45,7 +44,6 @@ GOD=false
 RUNNER="${RDEV_RUNNER:-claude}"
 NAME_OK=false
 REVIEW_LOOPS="$MAX_REVIEW_LOOPS"
-SESSION_FLAG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,7 +53,6 @@ while [[ $# -gt 0 ]]; do
     --god) GOD=true; shift ;;
     --name-ok) NAME_OK=true; shift ;;
     --branch) BRANCH_FLAG="$2"; shift 2 ;;
-    --session) SESSION_FLAG="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     --review-loops) REVIEW_LOOPS="$2"; shift 2 ;;
     -r|--runner) RUNNER="$2"; shift 2 ;;
@@ -89,7 +86,6 @@ else
   WORK_DIR="$WORKTREE_DIR/$NAME"
 fi
 
-rdev_resolve_session
 rdev_ensure_session
 
 # --- Detect resume ---
@@ -322,8 +318,7 @@ if [[ "$LOCAL" == "true" ]]; then
 fi
 
 # --- Create Herdr tab (via rdev-mux); reuse on resume ---
-# Legacy tmux window/pane code removed — rdev-mux drives Herdr now.
-# Layout mirrors the old tmux design: coordinator in the LEFT pane (~70%),
+# Layout: coordinator in the LEFT pane (~70%),
 # companion shell split off to the RIGHT (~30%). The coordinator is launched via
 # `pane run` in the tab's root pane; Herdr tracks it through the global claude hook.
 # Ensure the project workspace exists (find-or-create), then make the stream tab in it.
@@ -339,13 +334,6 @@ fi
 if [[ -z "$TAB_ID" ]]; then
   echo "Error: failed to create Herdr tab for '$NAME' in workspace '$RDEV_WORKSPACE'."
   exit 1
-fi
-
-# Start rwatch if not already running
-if ! pgrep -f "rwatch" >/dev/null 2>&1; then
-  nohup "$SCRIPT_DIR/rwatch" 30 >/dev/null 2>&1 &
-  disown
-  echo "Started rwatch (background pane monitor)"
 fi
 
 # Permission mode: god mode gets full bypass, otherwise auto
@@ -442,4 +430,3 @@ if [[ "$RESUMING" == "false" ]]; then
   echo "Plan with the agent, then run: rbuild $NAME"
 fi
 
-rdev_maybe_attach

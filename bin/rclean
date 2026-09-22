@@ -9,7 +9,7 @@ usage() {
   cat <<EOF
 Usage: rclean <name> [--yes] [--force]
 
-Clean up a workstream: unpromote if needed, remove worktree and close the Herdr tab.
+Clean up a workstream: remove the worktree and close the Herdr tab.
 SAFE BY DEFAULT: refuses to remove a worktree with uncommitted changes or unpushed
 commits (unless --force). Non-interactive with --yes (agents: always use --yes).
 
@@ -19,14 +19,12 @@ Arguments:
 Options:
   --yes, -y           Non-interactive: skip prompts, delete the merged branch
   --force             Remove even with uncommitted/unpushed work (destructive)
-  --session <name>    tmux session (default: current session)
   -h, --help          Show this help
 EOF
   exit 0
 }
 
 NAME=""
-SESSION_FLAG=""
 YES=false
 FORCE=false
 
@@ -35,7 +33,6 @@ while [[ $# -gt 0 ]]; do
     -h|--help) usage ;;
     --yes|-y) YES=true; shift ;;
     --force) FORCE=true; shift ;;
-    --session) SESSION_FLAG="$2"; shift 2 ;;
     -*) echo "Unknown option: $1"; usage ;;
     *) NAME="$1"; shift ;;
   esac
@@ -46,7 +43,6 @@ if [[ -z "$NAME" ]]; then
   usage
 fi
 
-rdev_resolve_session
 WORK_DIR="$(rdev_resolve_work_dir "$NAME")"
 STATE=$(rdev_read_state "$NAME")
 MODE=$(echo "$STATE" | jq -r '.mode // "worktree"')
@@ -85,21 +81,6 @@ if [[ "$FORCE" != "true" && -d "$WORK_DIR" ]]; then
     echo "rclean: push/land the work first, or re-run with --force if it is truly disposable"
     echo "rclean: (squash-merged PRs: verify merged with 'gh pr view', then --force is safe)"
     exit 1
-  fi
-fi
-
-# Unpromote if currently promoted (only for worktree mode — local mode doesn't promote)
-PROMOTED=$(echo "$STATE" | jq -r '.promoted // "false"')
-if [[ "$PROMOTED" == "true" && "$MODE" != "local" ]]; then
-  # Check if main repo is actually on a promoted branch before trying to unpromote
-  CURRENT_MAIN=$(git -C "$RHYTHMS_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
-  if [[ "$CURRENT_MAIN" == promoted/* ]]; then
-    # Stash if needed
-    if ! git -C "$RHYTHMS_DIR" diff --quiet 2>/dev/null || ! git -C "$RHYTHMS_DIR" diff --cached --quiet 2>/dev/null; then
-      git -C "$RHYTHMS_DIR" stash push -m "rdev: auto-stash before rclean $NAME"
-    fi
-    echo "Unpromoting branch first..."
-    "$SCRIPT_DIR/runpromote" "$NAME"
   fi
 fi
 

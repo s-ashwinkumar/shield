@@ -17,8 +17,9 @@ run_rfleet() {
 fail() { echo "FAIL: $1"; exit 1; }
 count() { ls "$ATT/$1" 2>/dev/null | grep -c '\.json$' || true; }
 
-# 1) plan stage → plan_gate item
-echo '{"stage":"plan","ticket":"USENG-1"}' > "$FIX/USENG-1/.claude/rdev/state.json"
+# 1) coordinator raises the plan gate (rgate → state.attention) → plan_gate item
+echo '{"stage":"plan","ticket":"USENG-1","attention":{"type":"plan_gate","summary":"Plan ready for approval","ts":1}}' \
+  > "$FIX/USENG-1/.claude/rdev/state.json"
 echo '{"stage":"build","ticket":"USENG-2"}' > "$FIX/USENG-2/.claude/rdev/state.json"
 run_rfleet
 [[ $(count pending) -eq 1 ]] || fail "expected 1 pending item, got $(count pending)"

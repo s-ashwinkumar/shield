@@ -3,7 +3,6 @@
 #
 #   rpeek <stream> [lines=40]
 #
-# Herdr streams via the registry; legacy tmux streams via capture-pane.
 # Read-only, always terminates.
 set -uo pipefail
 
@@ -27,13 +26,5 @@ if [[ -n "$PANE" ]]; then
   exit $?
 fi
 
-# Legacy tmux fallback (read-only)
-TPANE=$(tmux list-panes -a -F "#{pane_current_path} #{pane_id}" 2>/dev/null \
-        | awk -v p="$WT" '$1==p {print $2; exit}')
-if [[ -n "$TPANE" ]]; then
-  tmux capture-pane -p -t "$TPANE" 2>/dev/null | tail -"$LINES"
-  exit 0
-fi
-
-echo "rpeek: no live agent for '$STREAM' (herdr or tmux)" >&2
+echo "rpeek: no live agent for '$STREAM' " >&2
 exit 3

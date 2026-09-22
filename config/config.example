@@ -5,9 +5,6 @@
 RHYTHMS_DIR="{rhythms_dir}"
 WORKTREE_DIR="{worktree_dir}"
 
-# tmux
-TMUX_SESSION=rdev
-
 # Notifications
 NOTIFY=true
 

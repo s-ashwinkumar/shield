@@ -17,14 +17,12 @@ rdev_load_config
 
 ATT="${RFLEET_HOME:-$HOME/.rdev/attention}"
 ALL=false
-SESSION_FLAG=""
-prev=""
 for arg in "$@"; do
   case "$arg" in
     -a|--all) ALL=true ;;
     -h|--help)
       cat <<EOF
-Usage: rstatus [--all] [--session <name>]
+Usage: rstatus [--all]
 
 Fleet status for the captain (read-only).
   (default)   watcher health + attention queue: what needs you, by urgency.
@@ -33,8 +31,6 @@ Fleet status for the captain (read-only).
 EOF
       exit 0 ;;
   esac
-  [[ "$prev" == "--session" ]] && SESSION_FLAG="$arg"
-  prev="$arg"
 done
 
 NOW=$(date +%s)
@@ -103,7 +99,6 @@ fi
 $ALL || exit 0
 
 # ==================== --all: full detail ====================
-rdev_resolve_session
 
 echo
 echo "════ ALL WORKSTREAMS ════"
@@ -122,7 +117,6 @@ while IFS= read -r line; do
   state_file="$wt_path/.claude/rdev/state.json"
   if [[ -f "$state_file" ]]; then
     stage=$(jq -r '.stage // "unknown"' "$state_file")
-    promoted=$(jq -r '.promoted // "false"' "$state_file")
     review_loops=$(jq -r '.review_loops_done // 0' "$state_file")
     attn=$(jq -r '.attention.type // "-"' "$state_file")
     case "$stage" in
@@ -136,7 +130,6 @@ while IFS= read -r line; do
       *)           stage_icon="❓ $stage" ;;
     esac
     flags=""
-    [[ "$promoted" == "true" ]] && flags+=" [PROMOTED]"
     [[ "$attn" != "-" ]] && flags+=" [attn:$attn]"
     printf "  %-24s %-18s %-30s %s%s\n" "$wt_name" "$stage_icon" "$wt_branch" "(last: $last_commit)" "$flags"
     # lost signal: state flags attention but no queue item exists
